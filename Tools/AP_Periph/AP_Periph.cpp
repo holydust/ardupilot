@@ -151,6 +151,12 @@ void AP_Periph_FW::init()
     serial_options.init();
 #endif
 
+#ifdef HAL_CORVON_GPS_ENABLED
+    // latch interface mode and set the routing switches before the
+    // GPS driver opens the port
+    corvon.init();
+#endif
+
 #if AP_PERIPH_GPS_ENABLED
     gps.set_default_type_for_gps1(HAL_GPS1_TYPE_DEFAULT);
     if (gps.get_type(0) != AP_GPS::GPS_Type::GPS_TYPE_NONE && g.gps_port >= 0) {
@@ -523,6 +529,9 @@ void AP_Periph_FW::update()
         fiftyhz_last_update_ms = now;
 #if AP_PERIPH_NOTIFY_ENABLED
         notify.update();
+#endif
+#ifdef HAL_CORVON_GPS_ENABLED
+        corvon.update();
 #endif
 #if HAL_GCS_ENABLED
         gcs().update_receive();

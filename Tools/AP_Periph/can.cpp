@@ -631,6 +631,9 @@ void AP_Periph_FW::handle_lightscommand(CanardInstance* canard_instance, CanardR
     if (uavcan_equipment_indication_LightsCommand_decode(transfer, &req)) {
         return;
     }
+#ifdef HAL_CORVON_GPS_ENABLED
+    corvon.note_lights_command();
+#endif
     for (uint8_t i=0; i<req.commands.len; i++) {
         uavcan_equipment_indication_SingleLightCommand &cmd = req.commands.data[i];
         // to get the right color proportions we scale the green so that is uses the

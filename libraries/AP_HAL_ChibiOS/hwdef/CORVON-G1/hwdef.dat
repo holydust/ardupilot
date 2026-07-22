@@ -118,3 +118,9 @@ define AP_PARAM_MAX_EMBEDDED_PARAM 256
 
 # bootloader embedding / bootloader flashing not available
 define AP_BOOTLOADER_FLASHING_ENABLED 0
+
+# u-blox receiver on SERIAL3
+define HAL_GPS1_TYPE_DEFAULT 2
+
+# CORVON mode-select / listen / LED logic in Tools/AP_Periph/corvon_gps.cpp
+define HAL_CORVON_GPS_ENABLED 1

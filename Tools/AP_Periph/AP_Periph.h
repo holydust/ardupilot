@@ -45,6 +45,7 @@
 #include "actuator_telem.h"
 #include "networking.h"
 #include "serial_options.h"
+#include "corvon_gps.h"
 #if AP_SIM_ENABLED
 #include <SITL/SITL.h>
 #endif
@@ -442,6 +443,7 @@ public:
 #if AP_PERIPH_NOTIFY_ENABLED
     // notification object for LEDs, buzzers etc
     AP_Notify notify;
+
     uint64_t vehicle_state = 1; // default to initialisation
     float yaw_earth;
     uint32_t last_vehicle_state_ms;
@@ -449,6 +451,10 @@ public:
     // Handled under LUA script to control LEDs
     float get_yaw_earth() { return yaw_earth; }
     uint64_t get_vehicle_state() { return vehicle_state; }
+#endif
+
+#ifdef HAL_CORVON_GPS_ENABLED
+    CorvonGPS corvon;
 #endif
 
 #if AP_SCRIPTING_ENABLED
