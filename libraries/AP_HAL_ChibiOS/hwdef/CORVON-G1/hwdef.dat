@@ -1,0 +1,120 @@
+# hw definition file for CORVON G1 GNSS module (DW608 board)
+# STM32F412CEU6, AP_Periph DroneCAN GPS/compass/LED node.
+# G-series boards (G1=NEO-M9N, G2/G2 Pro=NEO-F10N) share this MCU wiring
+# and firmware; only the GNSS module and compass populate differ.
+
+# MCU class and specific type
+MCU STM32F4xx STM32F412Rx
+
+# bootloader starts firmware at 64k
+FLASH_RESERVE_START_KB 64
+
+# store parameters in sectors 2 and 3
+define STORAGE_FLASH_PAGE 2
+define HAL_STORAGE_SIZE 8192
+
+# board ID: private development ID, request an official CORVON range
+# in Tools/AP_Bootloader/board_types.txt before any upstream PR
+APJ_BOARD_ID 5750
+
+# setup build for a peripheral firmware
+env AP_PERIPH 1
+
+STM32_ST_USE_TIMER 5
+
+# crystal frequency
+OSCILLATOR_HZ 25000000
+
+# Flash available
+FLASH_SIZE_KB 512
+
+# debug console on USART2 (PA2/PA3 -> J4 header)
+STDOUT_SERIAL SD2
+STDOUT_BAUDRATE 57600
+
+# order of UARTs: SERIAL0 = console, SERIAL3 = GPS
+SERIAL_ORDER USART2 EMPTY EMPTY USART1
+
+PA2 USART2_TX USART2
+PA3 USART2_RX USART2
+define DEFAULT_SERIAL0_BAUD 57600
+
+# GNSS on USART1 through the RS2058 switch (NO throw = MCU).
+# In direct/UART mode the PA10 net only sees GNSS_TX through the R16
+# 10k listen tap; USART1 TX must stay idle then (switch leg is open).
+PA9 USART1_TX USART1 SPEED_HIGH
+PA10 USART1_RX USART1 SPEED_HIGH
+
+# SWD debugging (J3 header)
+PA13 JTMS-SWDIO SWD
+PA14 JTCK-SWCLK SWD
+
+# CAN: bxCAN2 is the only interface (PB13/PB5); ChibiOS enables the
+# CAN1 clock for the shared filter banks (same as sparky2)
+PB13 CAN2_TX CAN2
+PB5 CAN2_RX CAN2
+
+# use DNA
+define HAL_CAN_DEFAULT_NODE_ID 0
+
+# I2C1 to the onboard compass bus (via RS2058 U4 NO throw).
+# Bus has 4.7k pullups to 3V3 on the compass side.
+I2C_ORDER I2C1
+PB6 I2C1_SCL I2C1
+PB7 I2C1_SDA I2C1
+
+# compass probes: IST8310 (G1/G2, addr 0x0E), RM3100 (G2 Pro, addr 0x20)
+# rotation to be confirmed at bring-up against board orientation
+COMPASS IST8310 I2C:0:0x0E false ROTATION_NONE
+COMPASS RM3100 I2C:0:0x20 false ROTATION_NONE
+
+# WS2812C-2020 status LED on PA8 (TIM1_CH1 + DMA), driven as NeoPixel
+PA8 TIM1_CH1 TIM1 PWM(1) GPIO(50)
+define DEFAULT_NTF_LED_TYPES 256
+
+# mode-select / signal-routing control:
+# IN1/IN2 drive the RS2058 selects and MUST default LOW = NC = direct
+# passthrough (hardware fail-safe); firmware raises them only after
+# latching CAN mode at boot (break-before-make, I2C bus recovery first)
+PA6 SW_IN1 OUTPUT PUSHPULL LOW GPIO(60)
+PA7 SW_IN2 OUTPUT PUSHPULL LOW GPIO(61)
+
+# per-connector 5V presence sense (10K/10K dividers, before diode-OR)
+PB0 DET_UART INPUT GPIO(62)
+PA1 DET_CAN INPUT GPIO(63)
+
+# GNSS auxiliary pins
+PA5 GNSS_RESET OUTPUT OPENDRAIN HIGH GPIO(64)
+PB1 GNSS_EXTINT INPUT GPIO(65)
+PA0 GPS_PPS_IN INPUT GPIO(66)
+
+# no ADC pins used (presence sense is digital via the 10K/10K dividers)
+define HAL_USE_ADC FALSE
+define STM32_ADC_USE_ADC1 FALSE
+define HAL_DISABLE_ADC_DRIVER TRUE
+
+define DMA_RESERVE_SIZE 0
+
+define HAL_DEVICE_THREAD_STACK 768
+
+# single GPS, single compass
+define GPS_MAX_RECEIVERS 1
+define GPS_MAX_INSTANCES 1
+define HAL_COMPASS_MAX_SENSORS 1
+
+# peripherals: GPS + MAG + NeoPixel notify; no baro/safety/buzzer
+define AP_PERIPH_GPS_ENABLED 1
+define HAL_PERIPH_GPS_PORT_DEFAULT 3
+define AP_PERIPH_MAG_ENABLED 1
+define AP_PERIPH_BARO_ENABLED 0
+define AP_PERIPH_RC_OUT_ENABLED 1
+define AP_PERIPH_NOTIFY_ENABLED 1
+
+# allow for reboot command for faster development
+define HAL_PERIPH_LISTEN_FOR_SERIAL_UART_REBOOT_CMD_PORT 0
+
+# we setup a small defaults.parm
+define AP_PARAM_MAX_EMBEDDED_PARAM 256
+
+# bootloader embedding / bootloader flashing not available
+define AP_BOOTLOADER_FLASHING_ENABLED 0
