@@ -148,6 +148,13 @@
 #define STM32_PLLP_VALUE                    2
 #define STM32_PLLQ_VALUE                    2
 #define STM32_PLLI2SM_VALUE                 24
+#elif STM32_HSECLK == 25000000U
+// 25MHz cannot use a 2MHz PLL input, use 1MHz reference
+#define STM32_PLLM_VALUE                    25
+#define STM32_PLLN_VALUE                    200
+#define STM32_PLLP_VALUE                    2
+#define STM32_PLLQ_VALUE                    4
+#define STM32_PLLI2SM_VALUE                 25
 #else
 #error "Unsupported F4 HSE clock"
 #endif
