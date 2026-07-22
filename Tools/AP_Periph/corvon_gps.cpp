@@ -3,6 +3,7 @@
 #ifdef HAL_CORVON_GPS_ENABLED
 
 #include <AP_Param/AP_Param.h>
+#include <string.h>
 
 extern const AP_HAL::HAL &hal;
 
@@ -11,6 +12,7 @@ extern const AP_HAL::HAL &hal;
 #define CORVON_GPIO_SW_IN2   61
 #define CORVON_GPIO_DET_UART 62  // per-connector 5V sense, pre diode-OR
 #define CORVON_GPIO_DET_CAN  63
+#define CORVON_GPIO_PPS      66  // GNSS TIMEPULSE
 
 void CorvonGPS::init(void)
 {
@@ -60,6 +62,89 @@ void CorvonGPS::set_led(uint8_t r, uint8_t g, uint8_t b)
 #endif
 }
 
+// poll the debug console for the production test command
+void CorvonGPS::check_console(void)
+{
+    auto *uart = hal.serial(0);
+    if (uart == nullptr || !uart->is_initialized()) {
+        return;
+    }
+    uint32_t n = MIN(uart->available(), 64U);
+    while (n-- > 0) {
+        uint8_t c;
+        if (!uart->read(c)) {
+            break;
+        }
+        if (c == '\r' || c == '\n') {
+            cmd_buf[cmd_len] = 0;
+            cmd_len = 0;
+            if (strcmp(cmd_buf, "test") == 0) {
+                run_selftest();
+            }
+        } else if (cmd_len < sizeof(cmd_buf) - 1) {
+            cmd_buf[cmd_len++] = char(c);
+        }
+    }
+}
+
+/*
+  production self-test: print a PASS/FAIL report on the debug console
+  and cycle the LED red-green-blue-white for visual inspection.
+
+  the test jig must power the CAN connector: in UART mode the compass
+  I2C bus is switched to the host and cannot be checked from here
+ */
+void CorvonGPS::run_selftest(void)
+{
+    auto &uart = *hal.serial(0);
+    const uint32_t now = AP_HAL::millis();
+
+    uart.printf("\nCORVON selftest\n");
+
+    char sysid[50];
+    if (hal.util->get_system_id(sysid)) {
+        uart.printf("id: %s\n", sysid);
+    }
+
+    uart.printf("mode: %s%s\n",
+                mode == Mode::CAN ? "CAN" : "UART-direct",
+                dual_power ? " (both connectors powered!)" : "");
+    uart.printf("det: uart=%u can=%u\n",
+                unsigned(hal.gpio->read(CORVON_GPIO_DET_UART)),
+                unsigned(hal.gpio->read(CORVON_GPIO_DET_CAN)));
+
+    // a recently parsed message proves the UART path and the receiver
+    const uint32_t last_msg = periph.gps.last_message_time_ms();
+    const bool gnss_ok = last_msg != 0 && now - last_msg < 2000;
+    uart.printf("gnss: %s fix=%u sats=%u\n", gnss_ok ? "PASS" : "FAIL",
+                unsigned(periph.gps.status()), unsigned(periph.gps.num_sats()));
+
+    // TIMEPULSE runs at 1Hz before any fix, so this only proves the
+    // GNSS core is alive and the PPS trace is intact
+    const bool pps_ok = last_pps_ms != 0 && now - last_pps_ms < 2500;
+    uart.printf("pps: %s\n", pps_ok ? "PASS" : "FAIL");
+
+    bool mag_ok = true;
+#if AP_PERIPH_MAG_ENABLED
+    if (mode == Mode::CAN) {
+        // field magnitude in a plausible Earth-field range proves the
+        // sensor returns real data, not just an ID
+        const float field = periph.compass.get_field().length();
+        mag_ok = periph.compass.get_count() > 0 && periph.compass.healthy()
+                 && field > 100 && field < 1000;
+        uart.printf("mag: %s n=%u field=%.0f mGa\n", mag_ok ? "PASS" : "FAIL",
+                    unsigned(periph.compass.get_count()), field);
+    } else {
+        uart.printf("mag: SKIP (host owns the I2C bus in UART mode)\n");
+    }
+#endif
+
+    test_end_ms = now + 4000;
+    uart.printf("led: red-green-blue-white for 4s, check by eye\n");
+
+    uart.printf("result: %s\n", (gnss_ok && pps_ok && mag_ok) ? "PASS" : "FAIL");
+}
+
 /*
   status LED patterns, 16 slots of 125ms = 2s cycle:
 
@@ -74,6 +159,30 @@ void CorvonGPS::set_led(uint8_t r, uint8_t g, uint8_t b)
 void CorvonGPS::update(void)
 {
     const uint32_t now = AP_HAL::millis();
+
+    check_console();
+
+    // PPS edge tracking for the self-test. The 100ms TIMEPULSE high
+    // phase is much longer than our 20ms poll interval
+    const bool pps = hal.gpio->read(CORVON_GPIO_PPS);
+    if (pps && !pps_last_state) {
+        last_pps_ms = now;
+    }
+    pps_last_state = pps;
+
+    // self-test LED cycle overrides all patterns including the FC yield
+    if (test_end_ms != 0) {
+        if (now < test_end_ms) {
+            switch ((now / 500) % 4) {
+            case 0: set_led(255, 0, 0);     break;
+            case 1: set_led(0, 255, 0);     break;
+            case 2: set_led(0, 0, 255);     break;
+            case 3: set_led(255, 255, 255); break;
+            }
+            return;
+        }
+        test_end_ms = 0;
+    }
 
     // in CAN mode the flight controller owns the LED while it is
     // actively sending LightsCommand

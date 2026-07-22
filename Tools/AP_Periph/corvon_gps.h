@@ -47,6 +47,16 @@ private:
     uint32_t last_slot_ms;
     uint8_t slot;
 
+    // production self-test, triggered by typing "test" on the debug
+    // console. test_end_ms drives the LED inspection cycle
+    uint32_t test_end_ms;
+    uint32_t last_pps_ms;
+    bool pps_last_state;
+    char cmd_buf[8];
+    uint8_t cmd_len;
+
+    void check_console(void);
+    void run_selftest(void);
     void set_led(uint8_t r, uint8_t g, uint8_t b);
 };
 
