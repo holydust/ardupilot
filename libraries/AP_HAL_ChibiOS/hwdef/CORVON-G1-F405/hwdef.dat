@@ -91,6 +91,10 @@ PA5 GNSS_RESET OUTPUT OPENDRAIN HIGH GPIO(64)
 PB1 GNSS_EXTINT INPUT GPIO(65)
 PA0 GPS_PPS_IN INPUT GPIO(66)
 
+# PB2/BOOT1 has no external pulldown on the board; BOOT0 is strapped
+# low so BOOT1 is ignored at boot, pull it down for a defined level
+PB2 BOOT1 INPUT PULLDOWN
+
 # no ADC pins used (presence sense is digital via the 10K/10K dividers)
 define HAL_USE_ADC FALSE
 define STM32_ADC_USE_ADC1 FALSE
