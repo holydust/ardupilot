@@ -1,14 +1,15 @@
-# hw definition file for CORVON G1 GNSS module bootloader
+# hw definition file for CORVON G1 GNSS module bootloader (DW608 board)
+# domestic F405-class clones: APM32F405RGT6 / GD32F425RGT6
 
 # MCU class and specific type
-MCU STM32F4xx STM32F412Rx
+MCU STM32F4xx STM32F405xx
 
 FLASH_RESERVE_START_KB 0
 # four 16k sectors for bootloader + storage
 FLASH_BOOTLOADER_LOAD_KB 64
 
-# board ID: private development ID, see hwdef.dat
-APJ_BOARD_ID 5750
+# board ID: private, see hwdef.dat
+APJ_BOARD_ID 5751
 
 # setup build for a peripheral firmware
 env AP_PERIPH 1
@@ -17,7 +18,7 @@ env AP_PERIPH 1
 OSCILLATOR_HZ 25000000
 
 # Flash available
-FLASH_SIZE_KB 512
+FLASH_SIZE_KB 1024
 
 define HAL_STORAGE_SIZE 16384
 

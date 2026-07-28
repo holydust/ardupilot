@@ -1,10 +1,13 @@
 # hw definition file for CORVON G1 GNSS module (DW608 board)
-# STM32F412CEU6, AP_Periph DroneCAN GPS/compass/LED node.
-# G-series boards (G1=NEO-M9N, G2/G2 Pro=NEO-F10N) share this MCU wiring
-# and firmware; only the GNSS module and compass populate differ.
+# LQFP64 F405RG footprint carrying a domestic F405-class clone
+# (primary: Geehy APM32F405RGT6, second source: GD32F425RGT6).
+# AP_Periph DroneCAN GPS/compass/LED node. The STM32F412 variant of
+# this board is dropped - no F412 part will be built, so this is the
+# only G1 target. PRIVATE build target - never submitted upstream,
+# and the private board ID keeps upstream ST builds off clone silicon.
 
 # MCU class and specific type
-MCU STM32F4xx STM32F412Rx
+MCU STM32F4xx STM32F405xx
 
 # bootloader starts firmware at 64k
 FLASH_RESERVE_START_KB 64
@@ -13,9 +16,10 @@ FLASH_RESERVE_START_KB 64
 define STORAGE_FLASH_PAGE 2
 define HAL_STORAGE_SIZE 8192
 
-# board ID: private development ID, request an official CORVON range
-# in Tools/AP_Bootloader/board_types.txt before any upstream PR
-APJ_BOARD_ID 5750
+# board ID: private, intentionally distinct from the upstream-reserved
+# CORVON_G1 (1963) so ST and clone builds cannot cross-flash.
+# 5750 belonged to the dropped F412 variant - retired, never reuse it
+APJ_BOARD_ID 5751
 
 # setup build for a peripheral firmware
 env AP_PERIPH 1
@@ -26,7 +30,7 @@ STM32_ST_USE_TIMER 5
 OSCILLATOR_HZ 25000000
 
 # Flash available
-FLASH_SIZE_KB 512
+FLASH_SIZE_KB 1024
 
 # debug console on USART2 (PA2/PA3 -> J4 header)
 STDOUT_SERIAL SD2
@@ -63,10 +67,11 @@ I2C_ORDER I2C1
 PB6 I2C1_SCL I2C1
 PB7 I2C1_SDA I2C1
 
-# compass probes: IST8310 (G1/G2, addr 0x0E), RM3100 (G2 Pro, addr 0x20)
+# compass: IST8310 only (addr 0x0E). RM3100 is not fitted on DW608 -
+# that part belongs to the separate G2 Pro board, which has its own
+# PCB and mould, so there is nothing to probe for at 0x20 here.
 # rotation to be confirmed at bring-up against board orientation
 COMPASS IST8310 I2C:0:0x0E false ROTATION_NONE
-COMPASS RM3100 I2C:0:0x20 false ROTATION_NONE
 
 # WS2812C-2020 status LED on PA8 (TIM1_CH1 + DMA), driven as NeoPixel
 PA8 TIM1_CH1 TIM1 PWM(1) GPIO(50)

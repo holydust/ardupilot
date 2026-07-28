@@ -1,5 +1,5 @@
 # hw definition file for CORVON G2 dual-band GNSS module bootloader
-# (DW609 board, domestic F405-class clones: APM32F405RGT6 / GD32F405RGT6)
+# (DW609 board, domestic F405-class clones: APM32F405RGT6 / GD32F425RGT6)
 
 # MCU class and specific type
 MCU STM32F4xx STM32F405xx

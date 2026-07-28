@@ -1,8 +1,8 @@
 # hw definition file for CORVON G2 dual-band GNSS module (DW609 board)
 # LQFP64 F405RG footprint carrying a domestic F405-class clone
-# (primary: Geehy APM32F405RGT6, second source: GD32F405RGT6).
+# (primary: Geehy APM32F405RGT6, second source: GD32F425RGT6).
 # AP_Periph DroneCAN GPS/compass/LED node. Same wiring and same
-# Tools/AP_Periph/corvon_gps.cpp logic as the G1 boards; the GNSS
+# Tools/AP_Periph/corvon_gps.cpp logic as the G1 board; the GNSS
 # module is a u-blox F10 class part instead of M9, see the CFGv2 note
 # below. PRIVATE build target - never submitted upstream, private board
 # ID so upstream ST builds cannot be flashed onto clone silicon.
@@ -22,7 +22,7 @@ define STORAGE_FLASH_PAGE 2
 define HAL_STORAGE_SIZE 8192
 
 # board ID: private, distinct from the upstream-reserved CORVON_G2
-# (1964) and from the G1 targets, so nothing can cross-flash
+# (1964) and from CORVON-G1 (5751), so nothing can cross-flash
 APJ_BOARD_ID 5752
 
 # setup build for a peripheral firmware
