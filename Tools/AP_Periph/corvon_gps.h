@@ -55,6 +55,9 @@ private:
     // long enough for "set COMPASS_ORIENT -1" plus the terminator
     char cmd_buf[48];
     uint8_t cmd_len;
+    // set when a line overflows cmd_buf, cleared at the next line
+    // terminator. Everything up to that terminator is thrown away
+    bool discarding;
 
     // one bit per whitelisted parameter changed since boot, so "save"
     // writes only what the operator actually touched

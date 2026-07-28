@@ -100,15 +100,20 @@ void CorvonGPS::check_console(void)
         }
         if (c == '\r' || c == '\n') {
             cmd_buf[cmd_len] = 0;
-            if (cmd_len > 0) {
+            if (cmd_len > 0 && !discarding) {
                 run_command(cmd_buf);
             }
             cmd_len = 0;
+            discarding = false;
+        } else if (discarding) {
+            // still inside a line that already overflowed
         } else if (cmd_len < sizeof(cmd_buf) - 1) {
             cmd_buf[cmd_len++] = char(c);
         } else {
-            // overlong line, drop it rather than acting on a truncation
+            // overlong line: drop the whole line, not just the head. Line
+            // noise must never leave a tail behind that parses as a command
             cmd_len = 0;
+            discarding = true;
         }
     }
 }
