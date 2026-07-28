@@ -76,6 +76,11 @@ COMPASS IST8310 I2C:0:0x0E false ROTATION_NONE
 # WS2812C-2020 status LED on PA8 (TIM1_CH1 + DMA), driven as NeoPixel
 PA8 TIM1_CH1 TIM1 PWM(1) GPIO(50)
 define DEFAULT_NTF_LED_TYPES 256
+# NTF_LED_BRIGHT default. 2 = RGB_LED_MEDIUM (66%), close to the 35%
+# the patterns used to be hardcoded at. A single 2020 NeoPixel at 100%
+# is uncomfortable indoors; the outdoor-readable value gets decided at
+# EVT with a real board
+define NOTIFY_LED_BRIGHT_DEFAULT 2
 
 # mode-select / signal-routing control:
 # IN1/IN2 drive the RS2058 selects and MUST default LOW = NC = direct

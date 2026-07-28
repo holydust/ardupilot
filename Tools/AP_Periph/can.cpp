@@ -1328,6 +1328,10 @@ void AP_Periph_FW::processRx(void)
             if (instance.iface->receive(rxmsg, timestamp, flags) <= 0) {
                 break;
             }
+#ifdef HAL_CORVON_GPS_ENABLED
+            // any traffic at all proves we are on a live bus
+            corvon.note_can_rx();
+#endif
 #if HAL_PERIPH_CAN_MIRROR
             for (auto &other_instance : instances) {
                 if (other_instance.mirror_queue == nullptr) { // we aren't mirroring here, or failed on memory

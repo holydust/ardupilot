@@ -39,13 +39,17 @@ public:
     // local patterns yield to it
     void note_lights_command(void);
 
+    // called from the CAN rx path. A node that hears nothing at all is
+    // either unplugged or on a bus with no other node, which is worth
+    // showing on the LED
+    void note_can_rx(void);
+
 private:
     Mode mode = Mode::BOOT;
     bool dual_power;
     uint32_t boot_ms;
     uint32_t last_lights_ms;
-    uint32_t last_slot_ms;
-    uint8_t slot;
+    uint32_t last_can_rx_ms;
 
     // production self-test, triggered by typing "test" on the debug
     // console. test_end_ms drives the LED inspection cycle
@@ -71,7 +75,18 @@ private:
     void cmd_get(const char *name);
     void cmd_set(const char *name, const char *value);
     void cmd_save(void);
+
+    // one-shot power-on sequence: colour sweep then the mode colour
+    void boot_pattern(uint32_t t);
+    // warning mark in the tail of each cycle, highest priority only.
+    // returns true if it drew something
+    bool draw_warning(uint32_t t);
+    // n short flashes at the start of a 2s cycle
+    void flash_n(uint32_t cyc, uint8_t n, uint8_t r, uint8_t g, uint8_t b);
+
     void set_led(uint8_t r, uint8_t g, uint8_t b);
+    // same, scaled by level/255 on top of NTF_LED_BRIGHT
+    void set_led_dim(uint8_t r, uint8_t g, uint8_t b, uint8_t level);
 };
 
 #endif // HAL_CORVON_GPS_ENABLED

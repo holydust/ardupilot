@@ -57,11 +57,35 @@ void CorvonGPS::note_lights_command(void)
     last_lights_ms = AP_HAL::millis();
 }
 
+void CorvonGPS::note_can_rx(void)
+{
+    last_can_rx_ms = AP_HAL::millis();
+}
+
+/*
+  NTF_LED_BRIGHT has to be applied here. RGBLed::rgb_control() stores
+  the override verbatim and nothing downstream scales an AP_Periph rgb
+  override, so a brightness parameter has no effect unless we do it
+ */
 void CorvonGPS::set_led(uint8_t r, uint8_t g, uint8_t b)
 {
 #if AP_PERIPH_NOTIFY_ENABLED
+    int8_t pct = periph.notify.get_rgb_led_brightness_percent();
+    if (pct < 0 || pct > 100) {
+        pct = 100;
+    }
+    r = (uint16_t(r) * pct) / 100;
+    g = (uint16_t(g) * pct) / 100;
+    b = (uint16_t(b) * pct) / 100;
     periph.notify.handle_rgb(r, g, b);
 #endif
+}
+
+void CorvonGPS::set_led_dim(uint8_t r, uint8_t g, uint8_t b, uint8_t level)
+{
+    set_led((uint16_t(r) * level) / 255,
+            (uint16_t(g) * level) / 255,
+            (uint16_t(b) * level) / 255);
 }
 
 /*
@@ -81,7 +105,10 @@ static const struct {
     { "CAN_BAUDRATE",    10000, 1000000, true,  "CAN bitrate" },
     { "COMPASS_ORIENT",  0,     42,      false, "compass rotation enum" },
     { "COMPASS_USE",     0,     1,       false, "publish compass" },
-    { "LED_BRIGHTNESS",  0,     255,     false, "status LED brightness" },
+    // not LED_BRIGHTNESS: that one lives behind
+    // AP_PERIPH_HAVE_LED_WITHOUT_NOTIFY and is not compiled in on a
+    // board that drives its LED through AP_Notify
+    { "NTF_LED_BRIGHT",  0,     3,       false, "status LED brightness 0-3" },
     { "GPS1_RATE_MS",    50,    1000,    false, "GNSS output period in ms" },
 };
 
@@ -342,16 +369,110 @@ void CorvonGPS::run_selftest(void)
 }
 
 /*
-  status LED patterns, 16 slots of 125ms = 2s cycle:
+  status LED. Two layers:
 
-  boot (first 1.5s)        white fast blink
-  no data seen (UART mode) white slow blink   (baudrate not found yet)
-  no fix                   blue blink
-  2D fix                   green blink
-  3D fix or better         green solid, RTK float/fixed add a short
-                           blue/white mark each cycle
-  both connectors powered  orange mark at end of each cycle
+  - a one-shot power-on sequence: a red-green-blue sweep, which proves
+    all three channels of the single WS2812, followed by two pulses of
+    the latched interface mode (cyan = UART, magenta = CAN)
+  - a repeating 2s cycle carrying the GNSS state, with at most one
+    warning mark in the last 500ms
+
+  Breathing is used for every healthy ongoing state and hard flashes
+  for anything wanting attention, so the states stay apart even when
+  sunlight washes the colour out. The breath is floored well above
+  zero: a pattern that reaches full dark reads as "LED dead" outdoors.
+
+  In CAN mode a connected flight controller takes the LED over with
+  LightsCommand, so these patterns are what you see in UART mode and
+  in CAN mode before the flight controller is up - which is exactly
+  when the diagnosis matters.
+
+  Two states need no code and are documented for support only: the
+  power-on sweep repeating forever means the board is boot looping
+  (nearly always a sagging supply), and a dark or frozen LED means no
+  power, no firmware, or a dead LED.
  */
+
+#define CORVON_BOOT_SWEEP_MS   900    // 3 x 300ms colour sweep
+#define CORVON_BOOT_SEQ_MS    1900    // sweep + two mode pulses
+#define CORVON_GNSS_GRACE_MS  5000    // silence below this is just booting
+#define CORVON_CYCLE_MS       2000
+#define CORVON_WARN_MS         500    // warning mark occupies the tail
+
+// triangle breath across the cycle, floored at 25% of the set level
+static uint8_t breathe_level(uint32_t cyc)
+{
+    const uint32_t half = CORVON_CYCLE_MS / 2;
+    const uint32_t up = (cyc < half) ? cyc : (CORVON_CYCLE_MS - cyc);
+    return 64 + (up * 191) / half;
+}
+
+void CorvonGPS::flash_n(uint32_t cyc, uint8_t n, uint8_t r, uint8_t g, uint8_t b)
+{
+    const uint32_t period = 200;   // 120ms on, 80ms off
+    if (cyc < n * period && (cyc % period) < 120) {
+        set_led(r, g, b);
+    } else {
+        set_led(0, 0, 0);
+    }
+}
+
+void CorvonGPS::boot_pattern(uint32_t t)
+{
+    if (t < 300) {
+        set_led(255, 0, 0);
+    } else if (t < 600) {
+        set_led(0, 255, 0);
+    } else if (t < CORVON_BOOT_SWEEP_MS) {
+        set_led(0, 0, 255);
+    } else {
+        // two pulses of the latched mode colour. These two colours are
+        // used nowhere else, so they cannot be read as a fix state
+        const bool on = ((t - CORVON_BOOT_SWEEP_MS) % 500) < 300;
+        const uint8_t v = on ? 255 : 0;
+        if (mode == Mode::CAN) {
+            set_led(v, 0, v);          // magenta
+        } else {
+            set_led(0, v, v);          // cyan
+        }
+    }
+}
+
+/*
+  one warning mark per cycle, highest priority only - stacking marks
+  makes the tail unreadable
+ */
+bool CorvonGPS::draw_warning(uint32_t t)
+{
+    // both connectors powered. Miswired, and the mode that lost the
+    // arbitration is not the one the operator expects
+    if (dual_power) {
+        const bool on = (t < 100) || (t >= 200 && t < 300);
+        set_led(on ? 255 : 0, on ? 110 : 0, 0);        // orange double blink
+        return true;
+    }
+#if AP_PERIPH_MAG_ENABLED
+    // CAN mode only: in UART mode the compass sits on the host side of
+    // the RS2058 and the MCU is not on that bus at all, so an absent
+    // compass there says nothing
+    if (mode == Mode::CAN &&
+        (periph.compass.get_count() == 0 || !periph.compass.healthy())) {
+        set_led(t < 250 ? 255 : 0, 0, 0);              // red single flash
+        return true;
+    }
+#endif
+    // CAN mode with nothing at all on the bus. An ArduPilot node
+    // broadcasts NodeStatus every second, so 3s of silence means the
+    // bus is unplugged or we are the only node on it
+    if (mode == Mode::CAN &&
+        (last_can_rx_ms == 0 || AP_HAL::millis() - last_can_rx_ms > 3000)) {
+        const uint8_t v = (t < 250) ? 255 : 0;
+        set_led(v, 0, v);                              // magenta single flash
+        return true;
+    }
+    return false;
+}
+
 void CorvonGPS::update(void)
 {
     const uint32_t now = AP_HAL::millis();
@@ -386,65 +507,67 @@ void CorvonGPS::update(void)
         return;
     }
 
-    if (now - last_slot_ms < 125) {
-        return;
-    }
-    last_slot_ms = now;
-    slot = (slot + 1) % 16;
+    const uint32_t since_boot = now - boot_ms;
 
-    const uint8_t B = 90;  // brightness cap
-
-    if (now - boot_ms < 1500) {
-        const uint8_t v = (slot & 1) ? B : 0;
-        set_led(v, v, v);
+    if (since_boot < CORVON_BOOT_SEQ_MS) {
+        boot_pattern(since_boot);
         return;
     }
 
-    // dual-power warning overrides the last two slots of each cycle
-    if (dual_power && slot >= 14) {
-        set_led(B, B/2, 0);
+    // recomputed every call rather than on a slot tick, so the breath
+    // is smooth at the 50Hz update rate
+    const uint32_t cyc = since_boot % CORVON_CYCLE_MS;
+    const uint8_t lvl = breathe_level(cyc);
+
+    // nothing parsed from the receiver yet. Below the grace period the
+    // receiver is simply still booting; past it the link is broken,
+    // which is a different problem from "no fix" and must not share a
+    // pattern with it
+    if (periph.gps.last_message_time_ms() == 0) {
+        if (since_boot < CORVON_BOOT_SEQ_MS + CORVON_GNSS_GRACE_MS) {
+            set_led_dim(255, 255, 255, lvl / 2);       // dim white breathing
+        } else {
+            flash_n(cyc, 3, 255, 0, 0);                // red triple flash
+        }
         return;
     }
 
-    const AP_GPS::GPS_Status status = periph.gps.status();
-
-    if (mode == Mode::UART_DIRECT && periph.gps.last_message_time_ms() == 0) {
-        // listening but nothing parsed yet: slow white
-        set_led(slot < 8 ? B : 0, slot < 8 ? B : 0, slot < 8 ? B : 0);
+    // warning marks never cover a fault state, only healthy ones
+    if (cyc >= CORVON_CYCLE_MS - CORVON_WARN_MS &&
+        draw_warning(cyc - (CORVON_CYCLE_MS - CORVON_WARN_MS))) {
         return;
     }
 
-    switch (status) {
+    switch (periph.gps.status()) {
     case AP_GPS::NO_GPS:
     case AP_GPS::NO_FIX:
-        // searching: blue 1Hz
-        set_led(0, 0, (slot % 8) < 4 ? B : 0);
+        // searching
+        set_led_dim(0, 0, 255, lvl);
         break;
     case AP_GPS::GPS_OK_FIX_2D:
-        // 2D: green 1Hz
-        set_led(0, (slot % 8) < 4 ? B : 0, 0);
+        set_led_dim(0, 255, 0, lvl);
         break;
     case AP_GPS::GPS_OK_FIX_3D:
     case AP_GPS::GPS_OK_FIX_3D_DGPS:
     case AP_GPS::GPS_OK_FIX_TYPE_STATIC:
     case AP_GPS::GPS_OK_FIX_TYPE_PPP:
-        // 3D: green solid
-        set_led(0, B, 0);
+        // usable fix: solid, the only steady state in the vocabulary
+        set_led(0, 255, 0);
         break;
     case AP_GPS::GPS_OK_FIX_3D_RTK_FLOAT:
-        // RTK float: green with a blue mark
-        if (slot < 2) {
-            set_led(0, 0, B);
+        // kept for a future F9-class board; M9/F10 always report
+        // carrSoln 0 so these two never trigger on G1/G2
+        if (cyc < 150) {
+            set_led(0, 0, 255);
         } else {
-            set_led(0, B, 0);
+            set_led(0, 255, 0);
         }
         break;
     case AP_GPS::GPS_OK_FIX_3D_RTK_FIXED:
-        // RTK fixed: green with a white mark
-        if (slot < 2) {
-            set_led(B, B, B);
+        if (cyc < 150) {
+            set_led(255, 255, 255);
         } else {
-            set_led(0, B, 0);
+            set_led(0, 255, 0);
         }
         break;
     }
