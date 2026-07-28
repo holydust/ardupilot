@@ -3,7 +3,9 @@
 #ifdef HAL_CORVON_GPS_ENABLED
 
 #include <AP_Param/AP_Param.h>
+#include <AP_Common/AP_FWVersion.h>
 #include <string.h>
+#include <stdlib.h>
 
 extern const AP_HAL::HAL &hal;
 
@@ -62,7 +64,28 @@ void CorvonGPS::set_led(uint8_t r, uint8_t g, uint8_t b)
 #endif
 }
 
-// poll the debug console for the production test command
+/*
+  parameters the configuration tool is allowed to touch. Deliberately a
+  short list rather than the whole AP_Param tree: everything here is
+  something a customer may reasonably change, and nothing here can brick
+  the node beyond a re-flash
+ */
+static const struct {
+    const char *name;
+    float min;
+    float max;
+    bool reboot_required;
+    const char *help;
+} corvon_params[] = {
+    { "CAN_NODE",        0,     125,     true,  "DroneCAN node id, 0=auto (DNA)" },
+    { "CAN_BAUDRATE",    10000, 1000000, true,  "CAN bitrate" },
+    { "COMPASS_ORIENT",  0,     42,      false, "compass rotation enum" },
+    { "COMPASS_USE",     0,     1,       false, "publish compass" },
+    { "LED_BRIGHTNESS",  0,     255,     false, "status LED brightness" },
+    { "GPS1_RATE_MS",    50,    1000,    false, "GNSS output period in ms" },
+};
+
+// poll the debug console for commands
 void CorvonGPS::check_console(void)
 {
     auto *uart = hal.serial(0);
@@ -77,14 +100,182 @@ void CorvonGPS::check_console(void)
         }
         if (c == '\r' || c == '\n') {
             cmd_buf[cmd_len] = 0;
-            cmd_len = 0;
-            if (strcmp(cmd_buf, "test") == 0) {
-                run_selftest();
+            if (cmd_len > 0) {
+                run_command(cmd_buf);
             }
+            cmd_len = 0;
         } else if (cmd_len < sizeof(cmd_buf) - 1) {
             cmd_buf[cmd_len++] = char(c);
+        } else {
+            // overlong line, drop it rather than acting on a truncation
+            cmd_len = 0;
         }
     }
+}
+
+// split a completed line into verb and up to two arguments
+void CorvonGPS::run_command(char *line)
+{
+    char *saveptr = nullptr;
+    const char *verb = strtok_r(line, " \t", &saveptr);
+    if (verb == nullptr) {
+        return;
+    }
+    const char *arg1 = strtok_r(nullptr, " \t", &saveptr);
+    const char *arg2 = strtok_r(nullptr, " \t", &saveptr);
+
+    if (strcmp(verb, "test") == 0) {
+        run_selftest();
+    } else if (strcmp(verb, "ver") == 0) {
+        cmd_version();
+    } else if (strcmp(verb, "list") == 0) {
+        cmd_list();
+    } else if (strcmp(verb, "get") == 0) {
+        cmd_get(arg1);
+    } else if (strcmp(verb, "set") == 0) {
+        cmd_set(arg1, arg2);
+    } else if (strcmp(verb, "save") == 0) {
+        cmd_save();
+    } else if (strcmp(verb, "reboot") == 0) {
+        // needed after changing CAN_NODE / CAN_BAUDRATE. The bootloader
+        // magic string reboots *into* the bootloader, this comes back
+        // up in the application
+        hal.serial(0)->printf("ok rebooting\n");
+        hal.scheduler->delay(50);   // let the reply drain
+        periph.prepare_reboot();
+        hal.scheduler->reboot(false);
+    } else {
+        hal.serial(0)->printf("err unknown command\n");
+    }
+}
+
+/*
+  protocol version for the configuration tool. Bump CORVON_PROTO_VERSION
+  whenever a command's syntax or output changes so the tool can adapt
+ */
+#define CORVON_PROTO_VERSION 1
+
+void CorvonGPS::cmd_version(void)
+{
+    auto &uart = *hal.serial(0);
+    uart.printf("proto: %u\n", (unsigned)CORVON_PROTO_VERSION);
+    uart.printf("fw: %s %s\n", CHIBIOS_BOARD_NAME, AP::fwversion().fw_string);
+#ifdef APJ_BOARD_ID
+    uart.printf("board_id: %u\n", (unsigned)APJ_BOARD_ID);
+#endif
+    uart.printf("mode: %s\n", mode == Mode::CAN ? "CAN" : "UART-direct");
+    uart.printf("ok\n");
+}
+
+void CorvonGPS::cmd_list(void)
+{
+    auto &uart = *hal.serial(0);
+    for (const auto &p : corvon_params) {
+        float v = 0;
+        if (!AP_Param::get(p.name, v)) {
+            // a name in the table that the firmware does not actually
+            // have. Report it rather than hiding the row, otherwise a
+            // typo here looks like a missing feature at the far end
+            uart.printf("%s MISSING\n", p.name);
+            continue;
+        }
+        uart.printf("%s %.4g %.4g %.4g %s\n", p.name, (double)v,
+                    (double)p.min, (double)p.max, p.help);
+    }
+    uart.printf("ok\n");
+}
+
+// look up a name in the whitelist, nullptr if it is not settable
+static uint8_t corvon_param_index(const char *name)
+{
+    for (uint8_t i = 0; i < ARRAY_SIZE(corvon_params); i++) {
+        if (strcmp(corvon_params[i].name, name) == 0) {
+            return i;
+        }
+    }
+    return UINT8_MAX;
+}
+
+void CorvonGPS::cmd_get(const char *name)
+{
+    auto &uart = *hal.serial(0);
+    if (name == nullptr) {
+        uart.printf("err usage: get <name>\n");
+        return;
+    }
+    if (corvon_param_index(name) == UINT8_MAX) {
+        uart.printf("err not exposed\n");
+        return;
+    }
+    float v = 0;
+    if (!AP_Param::get(name, v)) {
+        uart.printf("err no such param\n");
+        return;
+    }
+    uart.printf("%s %.4g\n", name, (double)v);
+}
+
+void CorvonGPS::cmd_set(const char *name, const char *value)
+{
+    auto &uart = *hal.serial(0);
+    if (name == nullptr || value == nullptr) {
+        uart.printf("err usage: set <name> <value>\n");
+        return;
+    }
+    const uint8_t idx = corvon_param_index(name);
+    if (idx == UINT8_MAX) {
+        uart.printf("err not exposed\n");
+        return;
+    }
+    char *end = nullptr;
+    const float v = strtof(value, &end);
+    if (end == value || (end != nullptr && *end != 0)) {
+        uart.printf("err not a number\n");
+        return;
+    }
+    if (v < corvon_params[idx].min || v > corvon_params[idx].max) {
+        uart.printf("err out of range %.4g..%.4g\n",
+                    (double)corvon_params[idx].min, (double)corvon_params[idx].max);
+        return;
+    }
+    if (!AP_Param::set_by_name(name, v)) {
+        uart.printf("err set failed\n");
+        return;
+    }
+    // the value is live but volatile until "save"
+    dirty_mask |= 1U << idx;
+    uart.printf("ok\n");
+}
+
+/*
+  write the parameters touched since boot back to storage. set_by_name()
+  only updated RAM, so re-read each live value and save that. Untouched
+  parameters are left alone so "save" never persists a default the
+  operator did not ask for
+ */
+void CorvonGPS::cmd_save(void)
+{
+    auto &uart = *hal.serial(0);
+    if (dirty_mask == 0) {
+        uart.printf("nothing to save\n");
+        return;
+    }
+    bool needs_reboot = false;
+    for (uint8_t i = 0; i < ARRAY_SIZE(corvon_params); i++) {
+        if ((dirty_mask & (1U << i)) == 0) {
+            continue;
+        }
+        float v = 0;
+        if (!AP_Param::get(corvon_params[i].name, v) ||
+            !AP_Param::set_and_save_by_name_ifchanged(corvon_params[i].name, v)) {
+            uart.printf("err save failed at %s\n", corvon_params[i].name);
+            return;
+        }
+        uart.printf("saved %s %.4g\n", corvon_params[i].name, (double)v);
+        needs_reboot |= corvon_params[i].reboot_required;
+    }
+    dirty_mask = 0;
+    uart.printf(needs_reboot ? "ok reboot required\n" : "ok\n");
 }
 
 /*

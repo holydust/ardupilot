@@ -52,11 +52,22 @@ private:
     uint32_t test_end_ms;
     uint32_t last_pps_ms;
     bool pps_last_state;
-    char cmd_buf[8];
+    // long enough for "set COMPASS_ORIENT -1" plus the terminator
+    char cmd_buf[48];
     uint8_t cmd_len;
 
+    // one bit per whitelisted parameter changed since boot, so "save"
+    // writes only what the operator actually touched
+    uint32_t dirty_mask;
+
     void check_console(void);
+    void run_command(char *line);
     void run_selftest(void);
+    void cmd_version(void);
+    void cmd_list(void);
+    void cmd_get(const char *name);
+    void cmd_set(const char *name, const char *value);
+    void cmd_save(void);
     void set_led(uint8_t r, uint8_t g, uint8_t b);
 };
 
