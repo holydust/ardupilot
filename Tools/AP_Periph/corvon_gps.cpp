@@ -185,7 +185,8 @@ void CorvonGPS::run_command(char *line)
   protocol version for the configuration tool. Bump CORVON_PROTO_VERSION
   whenever a command's syntax or output changes so the tool can adapt
  */
-#define CORVON_PROTO_VERSION 1
+// 2: selftest "result:" gained INCOMPLETE alongside PASS and FAIL
+#define CORVON_PROTO_VERSION 2
 
 void CorvonGPS::cmd_version(void)
 {
@@ -348,6 +349,9 @@ void CorvonGPS::run_selftest(void)
     uart.printf("pps: %s\n", pps_ok ? "PASS" : "FAIL");
 
     bool mag_ok = true;
+    // a build with no compass at all has nothing to cover. Only the
+    // UART path leaves a compass that is fitted but unreachable
+    bool mag_covered = true;
 #if AP_PERIPH_MAG_ENABLED
     if (mode == Mode::CAN) {
         // field magnitude in a plausible Earth-field range proves the
@@ -358,6 +362,7 @@ void CorvonGPS::run_selftest(void)
         uart.printf("mag: %s n=%u field=%.0f mGa\n", mag_ok ? "PASS" : "FAIL",
                     unsigned(periph.compass.get_count()), field);
     } else {
+        mag_covered = false;
         uart.printf("mag: SKIP (host owns the I2C bus in UART mode)\n");
     }
 #endif
@@ -365,7 +370,17 @@ void CorvonGPS::run_selftest(void)
     test_end_ms = now + 4000;
     uart.printf("led: red-green-blue-white for 4s, check by eye\n");
 
-    uart.printf("result: %s\n", (gnss_ok && pps_ok && mag_ok) ? "PASS" : "FAIL");
+    // a run that could not reach the compass must not read as PASS. A
+    // production fixture greps this line, and powering the board from
+    // the wrong connector would otherwise ship untested compasses
+    if (!gnss_ok || !pps_ok || !mag_ok) {
+        uart.printf("result: FAIL\n");
+    } else if (!mag_covered) {
+        uart.printf("result: INCOMPLETE mag not covered, "
+                    "power the CAN connector for a full test\n");
+    } else {
+        uart.printf("result: PASS\n");
+    }
 }
 
 /*
