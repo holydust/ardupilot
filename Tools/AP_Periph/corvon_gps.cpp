@@ -538,11 +538,17 @@ void CorvonGPS::update(void)
     // receiver is simply still booting; past it the link is broken,
     // which is a different problem from "no fix" and must not share a
     // pattern with it
+    const uint32_t grace_end = CORVON_BOOT_SEQ_MS + CORVON_GNSS_GRACE_MS;
     if (periph.gps.last_message_time_ms() == 0) {
-        if (since_boot < CORVON_BOOT_SEQ_MS + CORVON_GNSS_GRACE_MS) {
+        if (since_boot < grace_end) {
             set_led_dim(255, 255, 255, lvl / 2);       // dim white breathing
         } else {
-            flash_n(cyc, 3, 255, 0, 0);                // red triple flash
+            // phase the burst off the instant the link is declared dead
+            // rather than off boot. grace_end lands 900ms into the cycle,
+            // past the 600ms flash window, so a boot-anchored phase hides
+            // the first burst for 1.1s - long enough to read as a dead LED
+            flash_n((since_boot - grace_end) % CORVON_CYCLE_MS,
+                    3, 255, 0, 0);                     // red triple flash
         }
         return;
     }
