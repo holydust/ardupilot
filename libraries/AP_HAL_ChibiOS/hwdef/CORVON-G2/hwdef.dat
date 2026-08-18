@@ -21,9 +21,10 @@ FLASH_RESERVE_START_KB 64
 define STORAGE_FLASH_PAGE 2
 define HAL_STORAGE_SIZE 8192
 
-# board ID: private, distinct from the upstream-reserved CORVON_G2
-# (1964) and from CORVON-G1 (5751), so nothing can cross-flash
-APJ_BOARD_ID 5752
+# board ID reserved upstream for this board, see CORVON-G1/hwdef.dat
+# for why using the reserved ID is safe here. 5752 (placeholder held
+# while the reservation was pending) is retired - never reuse it.
+APJ_BOARD_ID AP_HW_CORVON_G2
 
 # setup build for a peripheral firmware
 env AP_PERIPH 1

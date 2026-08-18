@@ -16,10 +16,14 @@ FLASH_RESERVE_START_KB 64
 define STORAGE_FLASH_PAGE 2
 define HAL_STORAGE_SIZE 8192
 
-# board ID: private, intentionally distinct from the upstream-reserved
-# CORVON_G1 (1963) so ST and clone builds cannot cross-flash.
-# 5750 belonged to the dropped F412 variant - retired, never reuse it
-APJ_BOARD_ID 5751
+# board ID reserved upstream for this board. The hwdef itself stays out
+# of tree - the MCU is an APM32/GD32 clone of the F405 - so no upstream
+# build will ever exist for this ID and there is nothing to cross-flash.
+# 5750 (dropped F412 variant) and 5751 (placeholder held while the
+# reservation was pending) are retired - never reuse either. Both sat
+# inside the 1000-19999 block this file reserves for upstream, in a gap
+# upstream is free to hand to somebody else.
+APJ_BOARD_ID AP_HW_CORVON_G1
 
 # setup build for a peripheral firmware
 env AP_PERIPH 1

@@ -8,8 +8,8 @@ FLASH_RESERVE_START_KB 0
 # four 16k sectors for bootloader + storage
 FLASH_BOOTLOADER_LOAD_KB 64
 
-# board ID: private, see hwdef.dat
-APJ_BOARD_ID 5751
+# board ID: see hwdef.dat
+APJ_BOARD_ID AP_HW_CORVON_G1
 
 # setup build for a peripheral firmware
 env AP_PERIPH 1
