@@ -22,8 +22,12 @@ FLASH_SIZE_KB 1024
 
 define HAL_STORAGE_SIZE 16384
 
-# order of UARTs
-SERIAL_ORDER
+# order of UARTs. USART2 is the J4 console pad, and the bootloader
+# listens for the upload protocol on it - the production tool flashes
+# bare boards over J4 before the shell is welded shut. Note this also
+# compiles out the fast-boot path in AP_Bootloader, so a cold boot now
+# dwells HAL_BOOTLOADER_TIMEOUT before jumping to the app.
+SERIAL_ORDER USART2
 
 # USART2 debug console
 PA2 USART2_TX USART2
