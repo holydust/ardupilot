@@ -71,6 +71,7 @@ private:
     void run_command(char *line);
     void run_selftest(void);
     void cmd_version(void);
+    void cmd_mag(void);
     void cmd_list(void);
     void cmd_get(const char *name);
     void cmd_set(const char *name, const char *value);

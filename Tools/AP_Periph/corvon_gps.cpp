@@ -160,6 +160,8 @@ void CorvonGPS::run_command(char *line)
         run_selftest();
     } else if (strcmp(verb, "ver") == 0) {
         cmd_version();
+    } else if (strcmp(verb, "mag") == 0) {
+        cmd_mag();
     } else if (strcmp(verb, "list") == 0) {
         cmd_list();
     } else if (strcmp(verb, "get") == 0) {
@@ -187,6 +189,29 @@ void CorvonGPS::run_command(char *line)
  */
 // 2: selftest "result:" gained INCOMPLETE alongside PASS and FAIL
 #define CORVON_PROTO_VERSION 2
+
+// raw field vector, for confirming COMPASS_ORIENT at bring-up. The
+// self-test only reports the magnitude, which is identical whichever way
+// the part is turned, so it cannot catch a wrong rotation
+void CorvonGPS::cmd_mag(void)
+{
+    auto &uart = *hal.serial(0);
+#if AP_PERIPH_MAG_ENABLED
+    if (periph.compass.get_count() == 0) {
+        uart.printf("mag: none\n");
+        return;
+    }
+    const Vector3f f = periph.compass.get_field();
+    uart.printf("mag: x=%+.0f y=%+.0f z=%+.0f mGa |B|=%.0f healthy=%u\n",
+                f.x, f.y, f.z, f.length(), unsigned(periph.compass.healthy()));
+    // level and pointing north in the northern hemisphere: x is the
+    // largest positive term, y sits near zero, z is positive because the
+    // field dips downwards. y flipping sign means the rotation is 180 out
+    uart.printf("ok\n");
+#else
+    uart.printf("mag: not compiled in\n");
+#endif
+}
 
 void CorvonGPS::cmd_version(void)
 {

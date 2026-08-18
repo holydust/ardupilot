@@ -74,8 +74,14 @@ PB7 I2C1_SDA I2C1
 # compass: IST8310 only (addr 0x0E). RM3100 is not fitted on DW608 -
 # that part belongs to the separate G2 Pro board, which has its own
 # PCB and mould, so there is nothing to probe for at 0x20 here.
-# rotation to be confirmed at bring-up against board orientation
-COMPASS IST8310 I2C:0:0x0E false ROTATION_NONE
+# The part sits on the underside of the board with its X+ axis along the
+# module's heading. Its own frame is left-handed - the driver flips Z to
+# make it right-handed - so with X+ forward and the die facing down, Y+
+# lands on the vehicle's left and the driver's Z ends up pointing up.
+# Rolling 180 puts it back on (forward, right, down).
+# Derived, not yet measured: confirm at bring-up with the console `mag`
+# command before this leaves engineering.
+COMPASS IST8310 I2C:0:0x0E false ROTATION_ROLL_180
 
 # WS2812C-2020 status LED on PA8 (TIM1_CH1 + DMA), driven as NeoPixel
 PA8 TIM1_CH1 TIM1 PWM(1) GPIO(50)
