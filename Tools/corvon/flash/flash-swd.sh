@@ -61,7 +61,9 @@ done
 
 HEX=$(ls "$DIR"/CORVON-${BOARD_UC}_AP_Periph_with_bl_*.hex 2>/dev/null | head -1 || true)
 APJ=$(ls "$DIR"/CORVON-${BOARD_UC}_AP_Periph_[0-9a-f]*.apj  2>/dev/null | head -1 || true)
-if [ -z "$HEX" ] || [ -z "$APJ" ]; then
+# --probe-only touches neither artifact, and the whole point of it is to read a
+# board on a machine that may not have the release bundle at all.
+if [ "$PROBE_ONLY" = 0 ] && { [ -z "$HEX" ] || [ -z "$APJ" ]; }; then
     echo "no CORVON-${BOARD_UC} .hex / .apj found in $DIR" >&2; exit 1
 fi
 
@@ -69,7 +71,7 @@ OOCD=(openocd -f interface/stlink.cfg
       -c "transport select hla_swd" -c "adapter speed ${SPEED}"
       -f target/stm32f4x.cfg -c init -c halt)
 
-echo "=== ${BOARD_UC}: $(basename "$HEX") ==="
+echo "=== ${BOARD_UC}: ${HEX:+$(basename "$HEX")}${HEX:-probe only, no artifact} ==="
 echo "    expecting board_id ${EXPECT_ID}"
 
 # ---- read-only state, before touching anything -----------------------------
@@ -91,7 +93,10 @@ if [ "$PROBE_ONLY" = 1 ]; then echo "probe only, nothing written"; exit 0; fi
 # independent check: what the silicon holds, against the artifact we ship.
 APP_BASE=0x08010000
 SIZE=$(python3 -c "import json;print(json.load(open('$APJ'))['image_size'])")
-RB=$(mktemp -t corvon_rb)
+# a bare -t prefix is BSD-only; GNU mktemp wants X's in the template, and it
+# would fail here *after* the board has already been programmed, silently
+# skipping the read-back comparison below
+RB=$(mktemp "${TMPDIR:-/tmp}/corvon_rb.XXXXXX")
 trap 'rm -f "$RB"' EXIT
 
 "${OOCD[@]}" -c "dump_image \"$RB\" ${APP_BASE} ${SIZE}" -c shutdown
