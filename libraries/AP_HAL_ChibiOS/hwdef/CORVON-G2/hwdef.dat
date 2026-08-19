@@ -21,6 +21,18 @@ FLASH_RESERVE_START_KB 64
 define STORAGE_FLASH_PAGE 2
 define HAL_STORAGE_SIZE 8192
 
+# This silicon is an APM32F405 clone and will not re-program a half-word that
+# has already been written, even when the new value only clears bits. Measured
+# on 2026-08-19: 0xE001 -> 0xE000 from a halted debugger leaves 0xE001 in
+# place, with no error bit set in FLASH_SR. AP_FlashStorage's F4 path depends
+# on exactly that operation - it writes a block header as BLOCK_STATE_WRITING,
+# writes the data, then rewrites the same two bytes as BLOCK_STATE_VALID - so
+# no block is ever marked valid and every write retries forever. The F1 path
+# writes the header and data once with the state already VALID, and splits the
+# sector state across separate words, so every cell is programmed exactly once.
+# That is the same constraint F1/F3 have, so the in-tree code path fits.
+define AP_FLASHSTORAGE_TYPE 1
+
 # board ID reserved upstream for this board, see CORVON-G1/hwdef.dat
 # for why using the reserved ID is safe here. 5752 (placeholder held
 # while the reservation was pending) is retired - never reuse it.
