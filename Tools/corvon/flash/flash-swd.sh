@@ -30,11 +30,14 @@ set -euo pipefail
 
 usage() {
     cat >&2 <<EOF
-usage: $(basename "$0") <g1|g2> [--probe-only] [--dir <artifact dir>] [--speed <kHz>]
+usage: $(basename "$0") <g1|g2> [--probe-only] [--no-bor] [--dir <dir>]
+                       [--speed <kHz>] [--silicon st|geehy|gd]
 
   --probe-only   read silicon identity, option bytes and flash state, write nothing
+  --no-bor       skip the BOR step (engineering only - a shipped board needs it)
   --dir          where the .hex / .apj live (default: this script's directory)
   --speed        SWD connect speed in kHz (default: 480)
+  --silicon      st | geehy | gd, for the BOR step (default: geehy)
 EOF
     exit 2
 }
@@ -50,14 +53,27 @@ esac
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SPEED=480
 PROBE_ONLY=0
+DO_BOR=1
+SILICON=geehy
 while [ $# -gt 0 ]; do
     case "$1" in
         --probe-only) PROBE_ONLY=1; shift ;;
-        --dir)   DIR="$2"; shift 2 ;;
-        --speed) SPEED="$2"; shift 2 ;;
+        --no-bor)     DO_BOR=0; shift ;;
+        --dir)     DIR="$2"; shift 2 ;;
+        --speed)   SPEED="$2"; shift 2 ;;
+        --silicon) SILICON="$2"; shift 2 ;;
         *) usage ;;
     esac
 done
+
+# the BOR configs live next to this script in the firmware tree, and are
+# copied alongside it into a release bundle
+BOR_DIR="$DIR"
+[ -f "$BOR_DIR/bor_common.cfg" ] || BOR_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../bor" && pwd)"
+if [ "$DO_BOR" = 1 ] && [ ! -f "$BOR_DIR/bor_common.cfg" ]; then
+    echo "BOR configs not found; pass --no-bor to skip, or put them next to this script" >&2
+    exit 1
+fi
 
 HEX=$(ls "$DIR"/CORVON-${BOARD_UC}_AP_Periph_with_bl_*.hex 2>/dev/null | head -1 || true)
 APJ=$(ls "$DIR"/CORVON-${BOARD_UC}_AP_Periph_[0-9a-f]*.apj  2>/dev/null | head -1 || true)
@@ -133,6 +149,29 @@ if not m: ok = False
 sys.exit(0 if ok else 1)
 PY
 
+if [ "$DO_BOR" = 1 ]; then
+    # The probe is already on the pads and the part is already running our
+    # firmware, so this costs a couple of seconds and saves a separate station.
+    # Writing option bytes is the one step with no BOR protection of its own:
+    # do not cut power or lift the probe while it runs. A QUARANTINE_HOLD_POWER
+    # means stop and keep the board powered - never retry automatically.
+    echo
+    echo "=== BOR level 3 (silicon: $SILICON) ==="
+    BOROOCD=(openocd -f interface/stlink-dap.cfg -f "$BOR_DIR/corvon-f405-swd.cfg"
+             -c "set SILICON $SILICON" -f "$BOR_DIR/bor_common.cfg")
+    "${BOROOCD[@]}" -f "$BOR_DIR/bor_program.cfg"
+    "${BOROOCD[@]}" -f "$BOR_DIR/bor_check.cfg"
+fi
+
 echo
 echo "=== ${BOARD_UC} flashed and verified ==="
-echo "next: BOR (Tools/corvon/bor/README.md), then console at 57600 8N1: ver / test / mag"
+if [ "$DO_BOR" = 1 ]; then
+    echo "BOR level 3 written and checked against flash storage."
+    echo "bor_check reads the stored option bytes rather than the loaded copy, so"
+    echo "it needs no power cycle - see Tools/corvon/bor/README.md for the one"
+    echo "calibration that still owes a measured power cycle."
+else
+    echo "BOR SKIPPED - this board is not shippable until it has been set."
+fi
+echo "next: power the board from the 4P connector, wait 8s, then console at"
+echo "57600 8N1: ver / test / mag"

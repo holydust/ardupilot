@@ -15,7 +15,40 @@ x32 只允许 VDD 2.7–3.6V,超出时数据 *"may not be retained"* —— 会*
 
 flash 写不只发生在产线:串口 `set`+`save`、飞控经 DroneCAN 改参、DroneCAN 固件升级,每次都含 x32 擦除。
 
-## 用法
+## 产线用法:不要单独跑这些脚本
+
+**烧录脚本已经把 BOR 并进去了**,产线只记一条命令:
+
+```
+Tools/corvon/flash/flash-swd.sh g1        # 探测 -> 烧写 -> verify -> 回读比对 -> 设 BOR -> 查 BOR
+```
+
+裸板第一次本来就要用 SWD 烧固件,**探针已经在焊盘上**,BOR 的增量成本约 2 秒,不需要独立工位。
+放行判据是脚本最后那句 `BOR CHECK PASS`。`--no-bor` 只给工程调试用,**跳过的板子不可出货**。
+
+放行检查用 `bor_check.cfg`(见下),**不需要断电、不需要万用表**。下面那套两级 gate 保留给工程验证。
+
+## 为什么产线不用两级 gate 了
+
+Gate 2 要求受控断电 + 实测放电电压,产线上太重,而且它唯一的失效模式恰恰是"放电不透 → 假通过"——
+一个既昂贵又容易被糊弄过去的判据。
+
+`bor_check.cfg` 改为**直接读 option byte 的 flash 存储区**,拿到的是存储单元内容而不是加载副本,
+比"断电后重读加载副本"更直接地回答了同一个问题,且没有可被糊弄的余地。
+
+```
+openocd -f interface/stlink-dap.cfg -f corvon-f405-swd.cfg \
+        -c "set SILICON geehy" -f bor_common.cfg -f bor_check.cfg
+```
+
+它做三件事:补码自洽校验(证明写入完整未截断)、RDP 必须 `0xAA`、`BOR_LEV` 必须 `0b00`,
+最后与加载副本交叉核对。任一不符 `exit != 0`。
+
+🔴 **仍欠一次标定**:没有人证明过 `0x1FFFC000` 的读取不会也走加载副本。
+在某一片板子上做一次**带测量的断电**、前后各读一次 `0x1FFFC000` 与 `OPTCR` 之前,
+两级 gate 请继续并行跑。这条闭了才能把 `bor_verify.cfg` 从产线彻底撤掉。
+
+## 工程验证用法(两级 gate)
 
 **探针 cfg 必须是 dap 型**:本目录的 `corvon-f405-swd.cfg` 用 `dap create`,配 ST-Link 时是
 `interface/stlink-dap.cfg`,**不是 `interface/stlink.cfg`**(后者是 hla 驱动,自己占着 DAP)。
