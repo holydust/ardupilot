@@ -324,8 +324,12 @@ void CorvonGPS::cmd_save(void)
             continue;
         }
         float v = 0;
+        // not the _ifchanged variant: "set" already wrote the live value, so
+        // ifchanged sees nothing to do and returns success without touching
+        // storage. AP_Param.h says as much - it is only safe where set() was
+        // not called separately.
         if (!AP_Param::get(corvon_params[i].name, v) ||
-            !AP_Param::set_and_save_by_name_ifchanged(corvon_params[i].name, v)) {
+            !AP_Param::set_and_save_by_name(corvon_params[i].name, v)) {
             uart.printf("err save failed at %s\n", corvon_params[i].name);
             return;
         }
