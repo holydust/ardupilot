@@ -669,6 +669,9 @@ void CANIface::initOnce(bool enable_irq)
             break;
 #if defined(RCC_APB1ENR1_CAN2EN)
         case 1:
+            // same slave relationship as the APB1ENR parts below: the filter
+            // banks are CAN1's, so it has to be clocked for CAN2 to receive
+            RCC->APB1ENR1  |=  RCC_APB1ENR1_CAN1EN;
             RCC->APB1ENR1  |=  RCC_APB1ENR1_CAN2EN;
             RCC->APB1RSTR1 |=  RCC_APB1RSTR1_CAN2RST;
             RCC->APB1RSTR1 &= ~RCC_APB1RSTR1_CAN2RST;

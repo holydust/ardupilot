@@ -71,7 +71,8 @@ OOCD=(openocd -f interface/stlink.cfg
       -c "transport select hla_swd" -c "adapter speed ${SPEED}"
       -f target/stm32f4x.cfg -c init -c halt)
 
-echo "=== ${BOARD_UC}: ${HEX:+$(basename "$HEX")}${HEX:-probe only, no artifact} ==="
+if [ -n "$HEX" ]; then LABEL=$(basename "$HEX"); else LABEL="probe only, no artifact"; fi
+echo "=== ${BOARD_UC}: ${LABEL} ==="
 echo "    expecting board_id ${EXPECT_ID}"
 
 # ---- read-only state, before touching anything -----------------------------
