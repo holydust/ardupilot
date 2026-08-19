@@ -675,6 +675,14 @@ void CANIface::initOnce(bool enable_irq)
             break;
 #elif defined(RCC_APB1ENR_CAN2EN)
         case 1:
+            // CAN2 is a slave of CAN1 on bxCAN: the filter banks are part of
+            // CAN1's register block, so CAN1 has to be clocked even on a board
+            // that never uses CAN1 as an interface. Without this the filter
+            // writes below go nowhere, the interface comes up with no
+            // acceptance filter, and it drops every frame it receives while
+            // transmitting perfectly normally. No reset here - CAN1 may
+            // already be running as another interface.
+            RCC->APB1ENR  |=  RCC_APB1ENR_CAN1EN;
             RCC->APB1ENR  |=  RCC_APB1ENR_CAN2EN;
             RCC->APB1RSTR |=  RCC_APB1RSTR_CAN2RST;
             RCC->APB1RSTR &= ~RCC_APB1RSTR_CAN2RST;
@@ -810,29 +818,47 @@ bool CANIface::init(const uint32_t bitrate)
      * Default filter configuration
      */
     if (self_index_ == 0) {
-        can_->FMR |= bxcan::FMR_FINIT;
-
-        can_->FMR &= 0xFFFFC0F1;
-        can_->FMR |= static_cast<uint32_t>(NumFilters) << 8;  // Slave (CAN2) gets half of the filters
-
-        can_->FFA1R = 0;                           // All assigned to FIFO0 by default
-        can_->FM1R = 0;                            // Indentifier Mask mode
-
-#if HAL_NUM_CAN_IFACES > 1
-        can_->FS1R = 0x7ffffff;                    // Single 32-bit for all
-        can_->FilterRegister[0].FR1 = 0;          // CAN1 accepts everything
-        can_->FilterRegister[0].FR2 = 0;
-        can_->FilterRegister[NumFilters].FR1 = 0; // CAN2 accepts everything
-        can_->FilterRegister[NumFilters].FR2 = 0;
-        can_->FA1R = 1 | (1 << NumFilters);        // One filter per each iface
-#else
-        can_->FS1R = 0x1fff;
-        can_->FilterRegister[0].FR1 = 0;
-        can_->FilterRegister[0].FR2 = 0;
-        can_->FA1R = 1;
+        /*
+          The filter banks belong to CAN1 and are shared with CAN2, which is a
+          slave with nothing mapped at those offsets. Reaching them through
+          can_ only works while the first interface happens to be CAN1. On a
+          board whose only interface is CAN2 the whole configuration lands in
+          CAN2's reserved space and bank 0 - a CAN1 bank - is the one that gets
+          activated, so the interface transmits and is ACKed normally but has
+          no acceptance filter at all and silently drops everything it
+          receives. CAN3, where it exists, is its own filter master.
+         */
+        bxcan::CanType *fcan = can_;
+        uint8_t bank = 0;
+#if defined(CAN1_BASE) && defined(CAN2_BASE)
+        if (can_interfaces[self_index_] == 1) {
+            fcan = reinterpret_cast<bxcan::CanType*>(uintptr_t(CAN1_BASE));
+            bank = NumFilters;                     // CAN2 owns NumFilters..27
+        }
 #endif
 
-        can_->FMR &= ~bxcan::FMR_FINIT;
+        fcan->FMR |= bxcan::FMR_FINIT;
+
+        fcan->FMR &= 0xFFFFC0F1;
+        fcan->FMR |= static_cast<uint32_t>(NumFilters) << 8;  // Slave (CAN2) gets half of the filters
+
+        fcan->FFA1R = 0;                           // All assigned to FIFO0 by default
+        fcan->FM1R = 0;                            // Indentifier Mask mode
+        fcan->FS1R = 0x7ffffff;                    // Single 32-bit for all
+
+#if HAL_NUM_CAN_IFACES > 1
+        fcan->FilterRegister[0].FR1 = 0;          // CAN1 accepts everything
+        fcan->FilterRegister[0].FR2 = 0;
+        fcan->FilterRegister[NumFilters].FR1 = 0; // CAN2 accepts everything
+        fcan->FilterRegister[NumFilters].FR2 = 0;
+        fcan->FA1R = 1 | (1 << NumFilters);        // One filter per each iface
+#else
+        fcan->FilterRegister[bank].FR1 = 0;
+        fcan->FilterRegister[bank].FR2 = 0;
+        fcan->FA1R = 1U << bank;
+#endif
+
+        fcan->FMR &= ~bxcan::FMR_FINIT;
     }
     initialised_ = true;
 
