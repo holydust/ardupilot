@@ -238,6 +238,29 @@ static void stm32_flash_wait_idle(void)
 #endif
 }
 
+/*
+  wait for a program or erase to actually get under way.
+
+  stm32_flash_wait_idle() only waits for BSY to fall, which assumes BSY is
+  already up by the time it first reads SR. On the APM32/GD32 F4 clones BSY
+  can still read low for a few cycles after the store retires, so that wait
+  returns before the operation has begun and the read-back in the caller
+  compares against pre-program contents - the write is reported as failed
+  even though it lands. The retry then writes an already-programmed cell,
+  which really does fail, and storage never recovers. Bounded, so an
+  operation that completes before we look cannot hang us.
+ */
+static void stm32_flash_wait_started(void)
+{
+#if defined(STM32F4) || defined(STM32F7)
+    for (uint32_t i=0; i<2000; i++) {
+        if (FLASH->SR & FLASH_SR_BSY) {
+            break;
+        }
+    }
+#endif
+}
+
 static void stm32_flash_clear_errors(void)
 {
 #if defined(STM32H7)
@@ -609,6 +632,7 @@ bool stm32_flash_erasepage(uint32_t page)
 #error "Unsupported MCU"
 #endif
 
+    stm32_flash_wait_started();
     stm32_flash_wait_idle();
 
     stm32_cacheBufferInvalidate((void*)stm32_flash_getpageaddr(page), stm32_flash_getpagesize(page));
@@ -769,7 +793,8 @@ static bool stm32_flash_write_f4f7(uint32_t addr, const void *buf, uint32_t coun
 
         // ensure write ordering with cache
         __DSB();
-        
+
+        stm32_flash_wait_started();
         stm32_flash_wait_idle();
 
         const uint32_t v2 = getreg32(addr);
@@ -792,7 +817,8 @@ static bool stm32_flash_write_f4f7(uint32_t addr, const void *buf, uint32_t coun
 
         // ensure write ordering with cache
         __DSB();
-        
+
+        stm32_flash_wait_started();
         stm32_flash_wait_idle();
 
         if (getreg16(addr) != *(uint16_t *)b) {

@@ -368,8 +368,12 @@ void CorvonGPS::run_selftest(void)
     uart.printf("gnss: %s fix=%u sats=%u\n", gnss_ok ? "PASS" : "FAIL",
                 unsigned(periph.gps.status()), unsigned(periph.gps.num_sats()));
 
-    // TIMEPULSE runs at 1Hz before any fix, so this only proves the
-    // GNSS core is alive and the PPS trace is intact
+    // TIMEPULSE only appears once the receiver has time lock. This build
+    // leaves CONFIGURE_PPS_PIN at 0, so ArduPilot never touches CFG-TP5 and
+    // the u-blox default applies: zero pulse length while unlocked, 100ms
+    // once locked. So this check needs a fix to pass, and a production
+    // fixture needs an antenna and usable signal or every board reads FAIL.
+    // Measured on the first DW608 on 2026-08-19: indoors, no fix, PA0 flat.
     const bool pps_ok = last_pps_ms != 0 && now - last_pps_ms < 2500;
     uart.printf("pps: %s\n", pps_ok ? "PASS" : "FAIL");
 
