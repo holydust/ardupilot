@@ -17,15 +17,18 @@ flash 写不只发生在产线:串口 `set`+`save`、飞控经 DroneCAN 改参�
 
 ## 用法
 
+**探针 cfg 必须是 dap 型**:本目录的 `corvon-f405-swd.cfg` 用 `dap create`,配 ST-Link 时是
+`interface/stlink-dap.cfg`,**不是 `interface/stlink.cfg`**(后者是 hla 驱动,自己占着 DAP)。
+
 ```
 # Gate 1:写入 + 即时校验
-openocd -f interface/<probe>.cfg -f corvon-f405-swd.cfg \
+openocd -f interface/stlink-dap.cfg -f corvon-f405-swd.cfg \
         -c "set SILICON st" -f bor_common.cfg -f bor_program.cfg
 
 # —— 受控断电:VDD 实测放电 <0.3V 并驻留 ≥500ms ——
 
 # Gate 2:重上电后复读(**这一步才是放行判据**)
-openocd -f interface/<probe>.cfg -f corvon-f405-swd.cfg \
+openocd -f interface/stlink-dap.cfg -f corvon-f405-swd.cfg \
         -c "set SILICON st" -f bor_common.cfg -f bor_verify.cfg
 ```
 
@@ -33,6 +36,30 @@ openocd -f interface/<probe>.cfg -f corvon-f405-swd.cfg \
 `gd` 分支为应急未认证库存保留,**产线常规禁用**。
 
 任一 gate `exit != 0` = FAIL/隔离。
+
+## 🔴 放电时必须断开所有回灌路径(2026-08-19 实测补充)
+
+只拔主供电不够。**ST-Link 的 SWCLK/SWDIO 和 USB-TTL 的 TX 都是 3.3V 推挽输出**,
+会经 MCU 引脚的 ESD 上二极管往 VDD 灌电,把电压顶在复位阈值以上,**放电永远到不了 0.3V**。
+
+放电时必须**同时断开**:4P 供电、SWD 探针、串口转接板。建议一根一根拔、边拔边看表,
+顺带测出每条回灌路径各自撑住多少电压 —— 这正是下面"尚未闭环"里要标定的数。
+
+## 另一条更强的判据:直接读 flash 里的 option byte
+
+Gate 2 的唯一失效模式是"放电不透 → 读到影子值 → 假通过"。有个不依赖断电的独立验证:
+**option byte 在 flash 里的固定地址是 `0x1FFFC000`**,那里是真正的存储单元,不是寄存器影子。
+
+STM32 以「值 + 按位取反」成对存储:
+
+```
+0x1FFFC000 = 0x550CAAF3
+  低半字 0xAAF3 = 实际值   RDP=0xAA(bits 15:8)  用户字节 0xF3 -> bits[3:2]=0b00 = Level 3
+  高半字 0x550C = 补码     ~0xAAF3 = 0x550C 自洽 -> 写入完整未被截断
+```
+
+**互补校验自洽 + BOR_LEV 正确 = flash 单元确实持有 Level 3。** 建议工装把这一条也纳入,
+与 Gate 2 互为独立佐证(2026-08-19 首片 DW608 即用此法确认)。
 
 ## 为什么要两级 gate
 
@@ -63,6 +90,11 @@ Gate 2 读到的还是影子值,**等于白测**。
 
 ## 尚未闭环
 
-- 三源各 2–3 片实测(DBG_ID 回填、Gate 2 放电阈值/驻留标定、option 擦写耗时)
+- 三源各 2–3 片实测(DBG_ID 回填、option 擦写耗时)
+- **Gate 2 放电阈值/驻留标定仍未做**:2026-08-19 首片走完全流程,但断电未实测电压
+  (改用上面的 flash 直读作为替代证据)。治具定型前必须补一次带测量的断电,记录:
+  拔 4P 后稳在多少(回灌量)、三样全拔后最低多少、掉破 0.3V 需要多久
+- 首片实测参考值:`DBG_ID 0x0009A413`、`FLASH 1024 KB`、写前 `OPTCR 0x0FFFAAED`、
+  写后 `0x0FFFAAE1`、`FLASH_SR` 清洁、`Target voltage 3.212V`
 - SWD 焊盘是否引出 NRST —— 有则 `reset_config` 改 `srst_only`
 - EVT 压降瞬态:3.3V 轨跌落不得误触 2.88V(最坏)
