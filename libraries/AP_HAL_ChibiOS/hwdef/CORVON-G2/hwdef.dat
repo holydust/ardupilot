@@ -80,12 +80,20 @@ PB7 I2C1_SDA I2C1
 # make it right-handed - so with X+ forward and the die facing down, Y+
 # lands on the vehicle's left and the driver's Z ends up pointing up.
 # Rolling 180 puts it back on (forward, right, down).
-# Derived, not yet measured: confirm at bring-up with the console `mag`
-# command before this leaves engineering.
+# Same part placement as G1, where this rotation was confirmed on
+# hardware 2026-08-19. Not yet measured on a DW609: repeat the N/E/S/W
+# sweep before this leaves engineering.
 COMPASS IST8310 I2C:0:0x0E false ROTATION_ROLL_180
 
 # WS2812C-2020 status LED on PA8 (TIM1_CH1 + DMA), driven as NeoPixel
 PA8 TIM1_CH1 TIM1 PWM(1) GPIO(50)
+
+# AP_Periph builds default AP_SERIALLED_ENABLED to 0 (see
+# hwdef/scripts/defaults_periph.h), which compiles the whole NeoPixel backend
+# out. set_led() then runs to completion through notify.handle_rgb() without a
+# single byte ever reaching PA8. Found on the first board on 2026-08-19: the
+# LED had never lit, on any build, since the pattern work began.
+define AP_SERIALLED_ENABLED 1
 define DEFAULT_NTF_LED_TYPES 256
 # NTF_LED_BRIGHT default. 2 = RGB_LED_MEDIUM (66%), close to the 35%
 # the patterns used to be hardcoded at. A single 2020 NeoPixel at 100%

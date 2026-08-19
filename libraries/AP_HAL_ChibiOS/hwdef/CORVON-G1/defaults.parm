@@ -1,0 +1,4 @@
+# NeoPixel1 on OUT1. PA8 is PWM(1), and without a function assigned to the
+# channel NeoPixel::init_ports() returns a zero mask, after which
+# SerialLED::hw_set_rgb() returns before writing anything.
+OUT1_FUNCTION 120
