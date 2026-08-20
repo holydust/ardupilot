@@ -168,8 +168,8 @@ echo "=== ${BOARD_UC} flashed and verified ==="
 if [ "$DO_BOR" = 1 ]; then
     echo "BOR level 3 written and checked against flash storage."
     echo "bor_check reads the stored option bytes rather than the loaded copy, so"
-    echo "it needs no power cycle - see Tools/corvon/bor/README.md for the one"
-    echo "calibration that still owes a measured power cycle."
+    echo "it needs no power cycle - proven on G2 2026-08-20 by moving BOR_LEV in"
+    echo "OPTCR without OPTSTRT and watching 0x1FFFC000 stay put."
 else
     echo "BOR SKIPPED - this board is not shippable until it has been set."
 fi
