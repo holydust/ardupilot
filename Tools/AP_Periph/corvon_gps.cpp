@@ -15,10 +15,12 @@ extern const AP_HAL::HAL &hal;
 #define CORVON_GPIO_DET_UART 62  // per-connector 5V sense, pre diode-OR
 #define CORVON_GPIO_DET_CAN  63
 #define CORVON_GPIO_PPS      66  // GNSS TIMEPULSE
+#define CORVON_SELFTEST_MS 4000  // "test" LED inspection cycle
 
 void CorvonGPS::init(void)
 {
-    boot_ms = AP_HAL::millis();
+    init_ms = AP_HAL::millis();
+    boot_ms = 0;                  // anchored at the first update(), see there
 
     // sample both presence lines for 50ms. The 10K/10K dividers give a
     // clean logic level; sampling only guards against power-on bounce
@@ -222,6 +224,10 @@ void CorvonGPS::cmd_version(void)
     uart.printf("board_id: %u\n", (unsigned)APJ_BOARD_ID);
 #endif
     uart.printf("mode: %s\n", mode == Mode::CAN ? "CAN" : "UART-direct");
+    // gap between init() and the first update(). The LED cannot be driven
+    // during it, so the boot sweep is anchored past it rather than at
+    // init(): on a DW609 this measured long enough to eat the red step
+    uart.printf("led_anchor_delay: %ums\n", unsigned(boot_ms - init_ms));
     uart.printf("ok\n");
 }
 
@@ -400,7 +406,7 @@ void CorvonGPS::run_selftest(void)
     }
 #endif
 
-    test_end_ms = now + 4000;
+    test_end_ms = now + CORVON_SELFTEST_MS;
     uart.printf("led: red-green-blue-white for 4s, check by eye\n");
 
     // a run that could not reach the compass must not read as PASS. A
@@ -538,7 +544,12 @@ void CorvonGPS::update(void)
     // self-test LED cycle overrides all patterns including the FC yield
     if (test_end_ms != 0) {
         if (now < test_end_ms) {
-            switch ((now / 500) % 4) {
+            // phase off the start of the test, not off the millis
+            // counter. Anchored to absolute time the sweep opens on
+            // whatever colour it happens to land on, and an operator
+            // told to expect red-green-blue-white reads that as a fault
+            const uint32_t t = now - (test_end_ms - CORVON_SELFTEST_MS);
+            switch ((t / 500) % 4) {
             case 0: set_led(255, 0, 0);     break;
             case 1: set_led(0, 255, 0);     break;
             case 2: set_led(0, 0, 255);     break;
@@ -555,6 +566,15 @@ void CorvonGPS::update(void)
         return;
     }
 
+    if (boot_ms == 0) {
+        // anchor the boot sequence where the LED can actually be driven.
+        // init() runs ahead of gps/compass/baro/imu init and that work
+        // takes long enough to swallow the first step of the sweep - on
+        // a DW609 the red step never reached the LED at all. The GNSS
+        // grace window is better measured from here too: it is about how
+        // long we have been listening, not how long the board has been on
+        boot_ms = now;
+    }
     const uint32_t since_boot = now - boot_ms;
 
     if (since_boot < CORVON_BOOT_SEQ_MS) {

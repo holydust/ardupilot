@@ -47,6 +47,10 @@ public:
 private:
     Mode mode = Mode::BOOT;
     bool dual_power;
+    // millis() at init(), and again at the first update(). The LED
+    // patterns hang off the second one: everything between the two is
+    // gps/compass/baro/imu init, during which nothing can reach the LED
+    uint32_t init_ms;
     uint32_t boot_ms;
     uint32_t last_lights_ms;
     uint32_t last_can_rx_ms;
