@@ -92,9 +92,18 @@ PB7 I2C1_SDA I2C1
 # make it right-handed - so with X+ forward and the die facing down, Y+
 # lands on the vehicle's left and the driver's Z ends up pointing up.
 # Rolling 180 puts it back on (forward, right, down).
-# Same part placement as G1, where this rotation was confirmed on
-# hardware 2026-08-19. Not yet measured on a DW609: repeat the N/E/S/W
-# sweep before this leaves engineering.
+# Confirmed on hardware 2026-08-21, on the first DW609 (die UID
+# 000c0046..., firmware a9efeac6). Board flat with the antenna face up,
+# nose swept N/E/S/W, field taken from the console `mag` command. The
+# body-frame result was (+x, z+) / (-y, z+) / (-x, z+) / (+y, z+) - all
+# four signs match this rotation, and z stayed positive throughout,
+# which a 180 roll error would invert. The four points fit a circle to
+# within 22 mGa on the radius, so the sweep really was a clean rotation
+# and not a walk past stray iron. Raw heading error spread 58 deg over
+# the four poses, which rules out a fixed yaw term - that would bias all
+# four the same way. Residuals after fitting out the hard and soft iron
+# peak at 25 deg, nowhere near the 45 deg step a wrong enumeration would
+# produce.
 COMPASS IST8310 I2C:0:0x0E false ROTATION_ROLL_180
 
 # WS2812C-2020 status LED on PA8 (TIM1_CH1 + DMA), driven as NeoPixel
