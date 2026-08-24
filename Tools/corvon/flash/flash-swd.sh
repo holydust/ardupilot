@@ -166,10 +166,11 @@ fi
 echo
 echo "=== ${BOARD_UC} flashed and verified ==="
 if [ "$DO_BOR" = 1 ]; then
-    echo "BOR level 3 written and checked against flash storage."
-    echo "bor_check reads the stored option bytes rather than the loaded copy, so"
-    echo "it needs no power cycle - proven on G2 2026-08-20 by moving BOR_LEV in"
-    echo "OPTCR without OPTSTRT and watching 0x1FFFC000 stay put."
+    echo "BOR level 3 written and checked at 0x1FFFC000."
+    echo "That address does not follow OPTCR - moving BOR_LEV in the register"
+    echo "without OPTSTRT leaves it untouched (G2, 2026-08-20). Reading it after"
+    echo "a power cycle is still owed, so keep running bor_verify.cfg until then;"
+    echo "see Tools/corvon/bor/README.md."
 else
     echo "BOR SKIPPED - this board is not shippable until it has been set."
 fi
