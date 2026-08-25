@@ -33,7 +33,9 @@ bool SerialLED::init()
 bool SerialLED::hw_set_rgb(uint8_t red, uint8_t green, uint8_t blue)
 {
     if (enable_mask == 0) {
-        // nothing is enabled, no pins set as LED output
+        // nothing is enabled, no pins set as LED output. That is decided
+        // once in init() and never changes, so there is nothing to retry
+        // and reporting success keeps RGBLed from polling a dead path
         return true;
     }
 
@@ -42,19 +44,30 @@ bool SerialLED::hw_set_rgb(uint8_t red, uint8_t green, uint8_t blue)
         return false;
     }
 
+    // Report what actually happened. RCOutput refuses LED data while it is
+    // still initialising, while serial_nleds is zero, while a send is
+    // pending, and if the lazy DMA buffer setup on the first call fails -
+    // all of which happen around boot. RGBLed::_set_rgb() latches the colour
+    // as current whenever this returns true and then skips the write until
+    // the colour changes, so claiming success for a dropped write loses that
+    // colour entirely rather than for one cycle. Measured on a CORVON-G1 on
+    // 2026-08-25: the whole 300ms red phase of the boot sequence never
+    // reached the LED, and the first light out of it was the green at 300ms.
+    bool ok = true;
+
     for (uint16_t chan=0; chan<16; chan++) {
         if ((1U<<chan) & enable_mask) {
-            led->set_RGB(chan+1, -1, red, green, blue);
+            ok = led->set_RGB(chan+1, -1, red, green, blue) && ok;
         }
     }
 
     for (uint16_t chan=0; chan<16; chan++) {
         if ((1U<<chan) & enable_mask) {
-            led->send(chan+1);
+            ok = led->send(chan+1) && ok;
         }
     }
 
-    return true;
+    return ok;
 }
 
 #endif  // AP_NOTIFY_SERIALLED_ENABLED
