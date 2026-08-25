@@ -200,7 +200,10 @@ void CorvonGPS::cmd_mag(void)
     auto &uart = *hal.serial(0);
 #if AP_PERIPH_MAG_ENABLED
     if (periph.compass.get_count() == 0) {
-        uart.printf("mag: none\n");
+        // every command terminates with ok or err - a bare line leaves a
+        // host waiting for a terminator that never comes, and reports a
+        // board that answered correctly as an unresponsive console
+        uart.printf("mag: none\nok\n");
         return;
     }
     const Vector3f f = periph.compass.get_field();
@@ -211,7 +214,7 @@ void CorvonGPS::cmd_mag(void)
     // field dips downwards. y flipping sign means the rotation is 180 out
     uart.printf("ok\n");
 #else
-    uart.printf("mag: not compiled in\n");
+    uart.printf("mag: not compiled in\nok\n");
 #endif
 }
 
@@ -277,6 +280,7 @@ void CorvonGPS::cmd_get(const char *name)
         return;
     }
     uart.printf("%s %.4g\n", name, (double)v);
+    uart.printf("ok\n");
 }
 
 void CorvonGPS::cmd_set(const char *name, const char *value)
@@ -321,7 +325,7 @@ void CorvonGPS::cmd_save(void)
 {
     auto &uart = *hal.serial(0);
     if (dirty_mask == 0) {
-        uart.printf("nothing to save\n");
+        uart.printf("nothing to save\nok\n");
         return;
     }
     bool needs_reboot = false;
