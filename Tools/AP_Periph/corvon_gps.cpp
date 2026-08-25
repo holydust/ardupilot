@@ -105,8 +105,12 @@ static const struct {
 } corvon_params[] = {
     { "CAN_NODE",        0,     125,     true,  "DroneCAN node id, 0=auto (DNA)" },
     { "CAN_BAUDRATE",    10000, 1000000, true,  "CAN bitrate" },
-    { "COMPASS_ORIENT",  0,     42,      false, "compass rotation enum" },
-    { "COMPASS_USE",     0,     1,       false, "publish compass" },
+    // not COMPASS_ORIENT or COMPASS_USE: AP_Compass keeps both behind
+    // #ifndef HAL_BUILD_AP_PERIPH, so neither exists in a periph build and
+    // every get/set of them answered "err no such param". Rotation is a
+    // build-time property here - it comes from the ROTATION_ROLL_180 on the
+    // COMPASS line in the board's hwdef.dat, and changing it means a new
+    // firmware, not a parameter write.
     // not LED_BRIGHTNESS: that one lives behind
     // AP_PERIPH_HAVE_LED_WITHOUT_NOTIFY and is not compiled in on a
     // board that drives its LED through AP_Notify
