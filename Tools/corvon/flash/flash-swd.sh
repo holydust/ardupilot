@@ -167,10 +167,14 @@ echo
 echo "=== ${BOARD_UC} flashed and verified ==="
 if [ "$DO_BOR" = 1 ]; then
     echo "BOR level 3 written and checked at 0x1FFFC000."
-    echo "That address does not follow OPTCR - moving BOR_LEV in the register"
-    echo "without OPTSTRT leaves it untouched (G2, 2026-08-20). Reading it after"
-    echo "a power cycle is still owed, so keep running bor_verify.cfg until then;"
-    echo "see Tools/corvon/bor/README.md."
+    echo
+    echo "THIS BOARD IS NOT RELEASED YET. This script does not run Gate 2."
+    echo "bor_check reads the option byte storage, but a model in which that"
+    echo "address is served by the controller's own read buffer survives every"
+    echo "measurement taken so far, and it would let a failed NVM commit pass"
+    echo "both this check and Gate 1. Release needs a controlled power cycle -"
+    echo "VDD measured below 0.3V, which takes tens of seconds with no load -"
+    echo "followed by bor_verify.cfg. See Tools/corvon/bor/README.md."
 else
     echo "BOR SKIPPED - this board is not shippable until it has been set."
 fi

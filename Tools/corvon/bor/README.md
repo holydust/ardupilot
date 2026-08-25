@@ -225,17 +225,36 @@ Geehy errata 列出过"部分版本 BOR 设置需 reset 才生效",GD32 用的�
 
 - ~~断电重上后读一次 `0x1FFFC000`~~ —— 2026-08-25 在 G1 上做掉了,但**它没有闭上
   这个口子**,`bor_verify.cfg` 继续保留,见上「三」
-- **`bor_check.cfg` 加读 `0x1FFFC008`**:验补码、验 `NWPROT` = `0xFFF`
-- **`bor_check.cfg` / `bor_verify.cfg` 加 `wait_not_busy`** —— 两者都能单独跑,
-  现在可能读到尚未稳定的 controller 状态
+- ~~`bor_check.cfg` 加读 `0x1FFFC008`~~ / ~~两个 gate 加 `wait_not_busy`~~ /
+  ~~`halt` 之后 `resume`~~ —— 2026-08-25 已做,并在 G1 上跑过正负两种路径
+- ~~产线到底跑没跑 Gate 2~~ —— **产线尚未开始,现有全部是样品板**(Vince,08-25),
+  不存在需要盘点的已放行板子。但 `flash-swd.sh` 结尾话术已改成"未跑 Gate 2 = 未放行",
+  正式投产前两份文件必须一致
 - **`bor_program.cfg` 加正向完成判据**(`EOP` 之类):现在只查错误位,命令被忽略、
-  `BUSY` 从未出现、错误位保持零时仍会通过
-- **`bor_check.cfg` 的 `halt` 之后要 `resume`** —— 纯读走 AHB-AP,其实不必 `halt`
-- **产线到底跑没跑 Gate 2**:本文「产线用法」说只记一条 `flash-swd.sh`,而该脚本
-  只调 `bor_program` + `bor_check`,从不调 `bor_verify`;`DW608_产测方案.md` 则写着
-  `bor_verify.cfg` 不得退役。两份文件打架,需要确认产线照哪一份执行,并盘点已按
-  该流程放行的板子
-- **`bor_check` 需要 known-bad 标定**:目前只在好板上验证过,拒绝能力未知
+  `BUSY` 从未出现、错误位保持零时仍会通过。**未做** —— 要动 Gate 1 的写入路径,
+  单独评估
+- **`bor_check` 需要 known-bad 标定**:目前只在好板上验证过,拒绝能力未知。
+  这是 Gate 2 不能退役的根本原因,不是补几行脚本能解决的
+- **泄放时间要写进产测方案**:G1 实测断电后 `V` 焊盘 **0.343V → 0.16V 约 30 秒**
+  (4P、USB-TTL、SWD 探针全断)。空载只靠漏电放,产线不能只写"断电后",
+  要写等待时间 + 实测判据
+
+## Gate 2 实测记录
+
+**2026-08-25 · G1 · UID `000D001D 3531340E 43485053` · `SILICON=geehy`**
+
+| 阶段 | 数据 |
+|---|---|
+| 断电前 11:13 | `C000=0x550CAAF3` `C008=0x0000FFFF` `OPTCR=0x0FFFAAE1` `OPTCR1=0x00000000` |
+| 断电 | 4P + USB-TTL + **SWD 探针**全断;`V` 焊盘 0.343V →(约 30s)→ **0.16V**,判据 < 0.3V ✅ |
+| 断电后 11:23 | **四个量与断电前完全一致** |
+| `bor_verify.cfg` | `GATE2 PASS - BOR Level 3 active`,exit 0 |
+
+**探针必须一起拔** —— SWD 与 USB-TTL 的推挽输出会经引脚 ESD 二极管回灌 VDD,
+不拔就放不透,Gate 2 会退化成它本来要防的那种"放电不透 → 假通过"。
+
+**这组数据不构成退役理由**:好板通过说明不了 gate 拒绝坏板的能力,
+也分不开上面那个 read buffer 模型 —— 在好板上两种模型预测完全相同。
 - 三源各 2–3 片实测(DBG_ID 回填、option 擦写耗时)
 - 首片实测参考值:`DBG_ID 0x0009A413`、`FLASH 1024 KB`、写前 `OPTCR 0x0FFFAAED`、
   写后 `0x0FFFAAE1`、`FLASH_SR` 清洁、`Target voltage 3.212V`
