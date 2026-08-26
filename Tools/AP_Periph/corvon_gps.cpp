@@ -20,6 +20,10 @@ extern const AP_HAL::HAL &hal;
 void CorvonGPS::init(void)
 {
     init_ms = AP_HAL::millis();
+
+    // before anything here can reach flash. A board whose level is already
+    // right takes no write at all, which is every board after the line
+    bor_init();
     boot_ms = 0;                  // anchored at the first update(), see there
 
     // sample both presence lines for 50ms. The 10K/10K dividers give a
@@ -176,6 +180,10 @@ void CorvonGPS::run_command(char *line)
         cmd_set(arg1, arg2);
     } else if (strcmp(verb, "save") == 0) {
         cmd_save();
+#if CORVON_BOR_TOOL_ENABLED
+    } else if (strcmp(verb, "bor") == 0) {
+        cmd_bor(arg1);
+#endif
     } else if (strcmp(verb, "reboot") == 0) {
         // needed after changing CAN_NODE / CAN_BAUDRATE. The bootloader
         // magic string reboots *into* the bootloader, this comes back
@@ -222,6 +230,164 @@ void CorvonGPS::cmd_mag(void)
 #endif
 }
 
+/*
+  BOR Level 3 without a debugger.
+
+  The option bytes were previously only reachable over SWD, which made a board
+  with a dead debug port unshippable however healthy the rest of it was. Upstream
+  programs option bytes from the running application on H7 and the G/L parts, but
+  those helpers are compiled out on F4, so this is our own sequence - the same one
+  Tools/corvon/bor/bor_program.cfg drives through openocd.
+
+  Proven on a CORVON-G1 (APM32F405) on 2026-08-26: written from the application in
+  both directions and read back unchanged after the rail was measured down to
+  0.01V, so it really commits to NVM rather than sitting in a controller buffer.
+  bor_verify.cfg then reported GATE2 PASS on the restored value.
+
+  Two properties worth keeping in mind before touching this:
+
+  - It only writes when the level is already wrong, so a board takes one option
+    byte write in its life and this path is dormant in the field forever after.
+  - Nothing but BOR_LEV is ever modified. Writing the RDP field by accident
+    triggers a mass erase, which is the one way this code could destroy a board,
+    so it refuses to start unless RDP already reads back as 0xAA.
+*/
+#define CORVON_FLASH_SR      (*(volatile uint32_t *)0x40023C0C)
+#define CORVON_FLASH_OPTKEYR (*(volatile uint32_t *)0x40023C08)
+#define CORVON_FLASH_OPTCR   (*(volatile uint32_t *)0x40023C14)
+#define CORVON_OPT_STORAGE   (*(volatile uint32_t *)0x1FFFC000)
+#define CORVON_FLASH_BSY     (1U << 16)
+#define CORVON_OPTCR_OPTLOCK (1U << 0)
+#define CORVON_OPTCR_OPTSTRT (1U << 1)
+#define CORVON_BOR_LEVEL3    0    // BOR_LEV encoding: 0 = ~2.7V, 3 = off
+
+/*
+  returns nullptr on success, else a short reason suitable for the ver line
+*/
+const char *CorvonGPS::bor_write_level(uint8_t lev)
+{
+    if ((CORVON_FLASH_OPTCR >> 8 & 0xFF) != 0xAA) {
+        return "rdp-not-0xAA";
+    }
+    if (CORVON_FLASH_SR & CORVON_FLASH_BSY) {
+        return "flash-busy";
+    }
+    if (CORVON_FLASH_OPTCR & CORVON_OPTCR_OPTLOCK) {
+        CORVON_FLASH_OPTKEYR = 0x08192A3B;
+        CORVON_FLASH_OPTKEYR = 0x4C5D6E7F;
+    }
+    if (CORVON_FLASH_OPTCR & CORVON_OPTCR_OPTLOCK) {
+        return "unlock-failed";
+    }
+
+    // clear BOR_LEV/OPTSTRT/OPTLOCK only, so RDP and nWRP carry through
+    uint32_t v = CORVON_FLASH_OPTCR;
+    v &= ~0xFU;
+    v |= (uint32_t(lev) & 3) << 2;
+    CORVON_FLASH_OPTCR = v;
+    CORVON_FLASH_OPTCR = v | CORVON_OPTCR_OPTSTRT;
+
+    for (uint32_t i = 0; i < 1000000 && (CORVON_FLASH_SR & CORVON_FLASH_BSY); i++) { }
+    CORVON_FLASH_OPTCR |= CORVON_OPTCR_OPTLOCK;
+
+    /*
+      BSY is not a completion signal on this silicon - both measured writes were
+      already finished before the first poll, so the loop above bounds the wait
+      and proves nothing. Worse, 0x1FFFC000 passes through a state whose
+      complement does not check out while programming settles: a read taken
+      straight after OPTSTRT returned 0x5500AAF3, value and complement
+      disagreeing, and the same address read 0x5500AAFF a second later
+      (measured on a CORVON-G1, 2026-08-26).
+
+      So completion is decided by reading it back until it is self-consistent
+      AND carries the level asked for. 20 attempts at 5ms is 100ms of headroom
+      over a write that has so far always been instant.
+    */
+    const char *last = "storage-unchanged";
+    for (uint8_t attempt = 0; attempt < 20; attempt++) {
+        hal.scheduler->delay(5);
+        if (((CORVON_FLASH_OPTCR >> 2) & 3) != (uint32_t(lev) & 3)) {
+            last = "optcr-unchanged";
+            continue;
+        }
+        const uint32_t st = CORVON_OPT_STORAGE;
+        const uint16_t val = st & 0xFFFF;
+        const uint16_t cpl = (st >> 16) & 0xFFFF;
+        if (cpl != uint16_t(~val)) {
+            last = "storage-torn";
+            continue;
+        }
+        if (((val >> 2) & 3) != (uint32_t(lev) & 3)) {
+            last = "storage-unchanged";
+            continue;
+        }
+        return nullptr;
+    }
+    return last;
+}
+
+/*
+  called from init(), before anything on this board can write flash
+*/
+void CorvonGPS::bor_init(void)
+{
+    const uint8_t lev = (CORVON_FLASH_OPTCR >> 2) & 3;
+    if (lev == CORVON_BOR_LEVEL3) {
+        bor_status = "ok level3";
+        return;
+    }
+    const char *err = bor_write_level(CORVON_BOR_LEVEL3);
+    if (err != nullptr) {
+        bor_fail_reason = err;
+        bor_status = nullptr;      // ver prints the reason instead
+        return;
+    }
+    bor_status = "ok level3 (set this boot)";
+}
+
+
+/*
+  Engineering tool, off in shipped firmware. Build with
+  -DCORVON_BOR_TOOL_ENABLED=1 to get a "bor [0-3]" console command that reads
+  the option bytes and can force an arbitrary BOR_LEV. It exists because the
+  only way to test the production path above is to put a board back into the
+  state a virgin one arrives in, and because it is the fastest way to read the
+  option bytes on a board whose SWD pads are unusable.
+
+  Not shipped: a console command that writes option bytes is a standing risk
+  surface for no production benefit, since bor_init() already does the one
+  write a board ever needs.
+*/
+#if CORVON_BOR_TOOL_ENABLED
+void CorvonGPS::cmd_bor(const char *arg)
+{
+    auto &uart = *hal.serial(0);
+    uart.printf("optcr:   0x%08x  bor_lev %u  rdp 0x%02x\n",
+                unsigned(CORVON_FLASH_OPTCR),
+                unsigned((CORVON_FLASH_OPTCR >> 2) & 3),
+                unsigned((CORVON_FLASH_OPTCR >> 8) & 0xFF));
+    uart.printf("storage: 0x%08x  (0x1FFFC000)\n", unsigned(CORVON_OPT_STORAGE));
+    if (arg == nullptr) {
+        uart.printf("ok\n");
+        return;
+    }
+    char *end = nullptr;
+    const long want = strtol(arg, &end, 0);
+    if (end == arg || (end != nullptr && *end != 0) || want < 0 || want > 3) {
+        uart.printf("err usage: bor [0-3]   raw BOR_LEV, 0=Level3(2.7V) 3=off\n");
+        return;
+    }
+    const char *err = bor_write_level(uint8_t(want));
+    if (err != nullptr) {
+        uart.printf("err %s\n", err);
+        return;
+    }
+    uart.printf("optcr:   0x%08x  bor_lev %u\n",
+                unsigned(CORVON_FLASH_OPTCR), unsigned((CORVON_FLASH_OPTCR >> 2) & 3));
+    uart.printf("storage: 0x%08x\nok\n", unsigned(CORVON_OPT_STORAGE));
+}
+#endif // CORVON_BOR_TOOL_ENABLED
+
 void CorvonGPS::cmd_version(void)
 {
     auto &uart = *hal.serial(0);
@@ -235,6 +401,15 @@ void CorvonGPS::cmd_version(void)
     // during it, so the boot sweep is anchored past it rather than at
     // init(): on a DW609 this measured long enough to eat the red step
     uart.printf("led_anchor_delay: %ums\n", unsigned(boot_ms - init_ms));
+    // production gate reads this line: pass is exactly the "bor: ok" prefix
+    if (bor_status != nullptr) {
+        uart.printf("bor: %s\n", bor_status);
+    } else {
+        uart.printf("bor: FAIL %s lev %u rdp 0x%02x\n",
+                    bor_fail_reason != nullptr ? bor_fail_reason : "unknown",
+                    unsigned((CORVON_FLASH_OPTCR >> 2) & 3),
+                    unsigned((CORVON_FLASH_OPTCR >> 8) & 0xFF));
+    }
     uart.printf("ok\n");
 }
 

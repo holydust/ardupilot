@@ -17,6 +17,12 @@
 
 #include <stdint.h>
 
+// engineering tool: a console command that can force BOR_LEV. Off in shipped
+// firmware - see the comment on cmd_bor() in corvon_gps.cpp for why
+#ifndef CORVON_BOR_TOOL_ENABLED
+#define CORVON_BOR_TOOL_ENABLED 0
+#endif
+
 class CorvonGPS {
 public:
     enum class Mode : uint8_t {
@@ -80,6 +86,15 @@ private:
     void cmd_get(const char *name);
     void cmd_set(const char *name, const char *value);
     void cmd_save(void);
+
+    // BOR Level 3 set from the application, see corvon_gps.cpp
+    void bor_init(void);
+    const char *bor_write_level(uint8_t lev);
+    const char *bor_status = nullptr;        // nullptr means look at bor_fail_reason
+    const char *bor_fail_reason = nullptr;
+#if CORVON_BOR_TOOL_ENABLED
+    void cmd_bor(const char *arg);        // engineering tool, see corvon_gps.cpp
+#endif
 
     // one-shot power-on sequence: colour sweep then the mode colour
     void boot_pattern(uint32_t t);
