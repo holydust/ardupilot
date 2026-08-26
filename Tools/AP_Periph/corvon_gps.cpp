@@ -251,12 +251,13 @@ void CorvonGPS::cmd_pool(void)
     const uint32_t pct = d.cap_blocks ? (100U * d.peak_blocks) / d.cap_blocks : 0;
     const uint32_t cur_pct = d.cap_blocks ? (100U * d.cur_blocks) / d.cap_blocks : 0;
     uart.printf("pool: cur %u/%u (%u%%) peak %u (%u%%) tx_oom %lu tx_err %u "
-                "tx_fail %u rx_oom %u tx_frames %lu rx_frames %lu\n",
+                "tx_streak %u rx_oom %u tx_frames %lu rx_ok %lu rx_ign %lu rx_bad %lu\n",
                 unsigned(d.cur_blocks), unsigned(d.cap_blocks), unsigned(cur_pct),
                 unsigned(d.peak_blocks), unsigned(pct),
                 (unsigned long)d.tx_oom, unsigned(d.tx_errors),
                 unsigned(d.tx_fail_count), unsigned(d.rx_error_oom),
-                (unsigned long)d.tx_frames, (unsigned long)d.rx_frames);
+                (unsigned long)d.tx_frames, (unsigned long)d.rx_frames,
+                (unsigned long)d.rx_ignored, (unsigned long)d.rx_bad);
     uart.printf("ok\n");
 }
 #endif // CORVON_POOL_DIAG_ENABLED

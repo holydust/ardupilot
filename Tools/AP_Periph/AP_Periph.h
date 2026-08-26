@@ -622,7 +622,9 @@ public:
         uint32_t tx_frames;
         uint16_t tx_errors;     // every canardBroadcast/Request res <= 0
         uint32_t tx_oom;        // the subset rejected for want of pool blocks
-        uint32_t rx_frames;
+        uint32_t rx_frames;     // accepted by canard
+        uint32_t rx_ignored;    // arrived and were filtered out - NOT silence
+        uint32_t rx_bad;        // arrived and were malformed
         uint16_t rx_error_oom;
         uint8_t  tx_fail_count; // consecutive failures to hand a frame to the driver
     };

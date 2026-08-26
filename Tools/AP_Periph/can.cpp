@@ -1218,10 +1218,24 @@ void AP_Periph_FW::corvon_pool_diag(CorvonPoolDiag &d)
     d.tx_errors    = protocol_stats.tx_errors;
     d.rx_frames    = protocol_stats.rx_frames;
     d.rx_error_oom = protocol_stats.rx_error_oom;
+    // rx_frames alone cannot tell "nothing arrived" from "everything that
+    // arrived was for somebody else": a frame this node is not subscribed to
+    // is counted here, not there, and reading rx_frames as traffic makes a
+    // healthy bus look dead.
+    d.rx_ignored = uint32_t(protocol_stats.rx_ignored_not_wanted) +
+                   uint32_t(protocol_stats.rx_ignored_wrong_address) +
+                   uint32_t(protocol_stats.rx_ignored_unexpected_tid);
+    d.rx_bad = uint32_t(protocol_stats.rx_error_internal) +
+               uint32_t(protocol_stats.rx_error_missed_start) +
+               uint32_t(protocol_stats.rx_error_wrong_toggle) +
+               uint32_t(protocol_stats.rx_error_short_frame) +
+               uint32_t(protocol_stats.rx_error_bad_crc);
 #else
     d.tx_frames = 0;
     d.tx_errors = 0;
     d.rx_frames = 0;
+    d.rx_ignored = 0;
+    d.rx_bad = 0;
     d.rx_error_oom = 0;
 #endif
 }
