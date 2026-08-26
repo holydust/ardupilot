@@ -148,6 +148,14 @@ struct CanardRxTransfer;
     (((uint32_t)(data_type_id)) | (((uint32_t)(transfer_type)) << 16U) |                            \
     (((uint32_t)(src_node_id)) << 18U) | (((uint32_t)(dst_node_id)) << 25U))
 
+// Engineering tool: a console command that reports canard pool occupancy and
+// the transmit failure counters. Off in shipped firmware - see cmd_pool() in
+// corvon_gps.cpp. Both numbers live in can.cpp and are otherwise unreachable
+// from the console.
+#ifndef CORVON_POOL_DIAG_ENABLED
+#define CORVON_POOL_DIAG_ENABLED 0
+#endif
+
 #ifndef HAL_CAN_POOL_SIZE
 #if HAL_CANFD_SUPPORTED
     #define HAL_CAN_POOL_SIZE 16000
@@ -605,6 +613,21 @@ public:
 #endif // HAL_PERIPH_CAN_MIRROR
     void cleanup_stale_transactions(uint64_t timestamp_usec);
     void update_rx_protocol_stats(int16_t res);
+
+#if CORVON_POOL_DIAG_ENABLED
+    struct CorvonPoolDiag {
+        uint16_t cap_blocks;
+        uint16_t cur_blocks;
+        uint16_t peak_blocks;
+        uint32_t tx_frames;
+        uint16_t tx_errors;     // every canardBroadcast/Request res <= 0
+        uint32_t tx_oom;        // the subset rejected for want of pool blocks
+        uint32_t rx_frames;
+        uint16_t rx_error_oom;
+        uint8_t  tx_fail_count; // consecutive failures to hand a frame to the driver
+    };
+    void corvon_pool_diag(CorvonPoolDiag &d);
+#endif
     void node_status_send(void);
     bool can_do_dna();
     uint8_t *get_tid_ptr(uint32_t transfer_desc);

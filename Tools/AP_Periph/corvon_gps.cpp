@@ -184,6 +184,10 @@ void CorvonGPS::run_command(char *line)
     } else if (strcmp(verb, "bor") == 0) {
         cmd_bor(arg1);
 #endif
+#if CORVON_POOL_DIAG_ENABLED
+    } else if (strcmp(verb, "pool") == 0) {
+        cmd_pool();
+#endif
     } else if (strcmp(verb, "reboot") == 0) {
         // needed after changing CAN_NODE / CAN_BAUDRATE. The bootloader
         // magic string reboots *into* the bootloader, this comes back
@@ -207,6 +211,46 @@ void CorvonGPS::run_command(char *line)
 // raw field vector, for confirming COMPASS_ORIENT at bring-up. The
 // self-test only reports the magnitude, which is identical whichever way
 // the part is turned, so it cannot catch a wrong rotation
+#if CORVON_POOL_DIAG_ENABLED
+/*
+  Engineering tool. Reports canard pool occupancy and the transmit failure
+  counters, to tell apart three things that all look like "ENLARGE MEMORY
+  POOL" on the console:
+
+    tx_fail rising     - frames are not reaching the bus at all, so the queue
+                         cannot drain and the pool fills behind it. A CAN
+                         transceiver / bus / termination fault, not a size
+                         problem.
+    tx_oom rising      - the pool genuinely ran out and whole transfers were
+                         refused before a single frame was queued. libcanard
+                         does that deliberately rather than emit a corrupt
+                         partial transfer, so the loss is silent.
+    cur low, peak 100% - a spike between two 1Hz cleanups. Nothing was lost;
+                         the warning is driven by a high water mark that never
+                         decays.
+
+  Not compiled into shipped firmware: the numbers are only meaningful next to
+  a known bus, and a console command that prints internal counters invites
+  them being quoted as a health check.
+ */
+void CorvonGPS::cmd_pool(void)
+{
+    auto &uart = *hal.serial(0);
+    AP_Periph_FW::CorvonPoolDiag d {};
+    periph.corvon_pool_diag(d);
+    const uint32_t pct = d.cap_blocks ? (100U * d.peak_blocks) / d.cap_blocks : 0;
+    const uint32_t cur_pct = d.cap_blocks ? (100U * d.cur_blocks) / d.cap_blocks : 0;
+    uart.printf("pool: cur %u/%u (%u%%) peak %u (%u%%) tx_oom %lu tx_err %u "
+                "tx_fail %u rx_oom %u tx_frames %lu rx_frames %lu\n",
+                unsigned(d.cur_blocks), unsigned(d.cap_blocks), unsigned(cur_pct),
+                unsigned(d.peak_blocks), unsigned(pct),
+                (unsigned long)d.tx_oom, unsigned(d.tx_errors),
+                unsigned(d.tx_fail_count), unsigned(d.rx_error_oom),
+                (unsigned long)d.tx_frames, (unsigned long)d.rx_frames);
+    uart.printf("ok\n");
+}
+#endif // CORVON_POOL_DIAG_ENABLED
+
 void CorvonGPS::cmd_mag(void)
 {
     auto &uart = *hal.serial(0);

@@ -95,6 +95,9 @@ private:
 #if CORVON_BOR_TOOL_ENABLED
     void cmd_bor(const char *arg);        // engineering tool, see corvon_gps.cpp
 #endif
+#if CORVON_POOL_DIAG_ENABLED
+    void cmd_pool(void);                  // engineering tool, see corvon_gps.cpp
+#endif
 
     // one-shot power-on sequence: colour sweep then the mode colour
     void boot_pattern(uint32_t t);

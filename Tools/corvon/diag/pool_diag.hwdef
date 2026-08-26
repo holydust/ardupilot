@@ -1,0 +1,12 @@
+# Engineering overlay: turns on the "pool" console command.
+#
+#   ./waf configure --board CORVON-G2 --extra-hwdef=Tools/corvon/diag/pool_diag.hwdef
+#   ./waf AP_Periph
+#
+# Reconfigure without --extra-hwdef before building anything that ships.
+#
+# The command reports canard pool occupancy plus the transmit failure counters,
+# which is what separates "the pool is too small" from "frames are not reaching
+# the bus and the queue is backing up behind them". Both look identical on the
+# console: WARNING: ENLARGE MEMORY POOL, once a second, forever.
+define CORVON_POOL_DIAG_ENABLED 1

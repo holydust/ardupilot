@@ -153,6 +153,13 @@ static_assert(EXT_FLASH_SIZE_MB == 0, "DroneCAN bootloader cannot support extern
  * Node status variables
  */
 static uavcan_protocol_NodeStatus node_status;
+#if CORVON_POOL_DIAG_ENABLED
+// Broadcasts and responses rejected because the pool had no blocks left.
+// tx_errors below lumps this together with a driver-level send failure, and
+// telling the two apart is the whole point of the diagnostic.
+static uint32_t corvon_tx_oom;
+#endif
+
 #if HAL_ENABLE_SENDING_STATS
 static dronecan_protocol_Stats protocol_stats;
 #endif
@@ -1128,6 +1135,11 @@ bool AP_Periph_FW::canard_broadcast(uint64_t data_type_signature,
     };
     const int16_t res = canardBroadcastObj(&dronecan.canard, &transfer_object);
 
+#if CORVON_POOL_DIAG_ENABLED
+    if (res == -CANARD_ERROR_OUT_OF_MEMORY) {
+        corvon_tx_oom++;
+    }
+#endif
 #if DEBUG_PKTS
     if (res < 0) {
         can_printf("Tx error %d\n", res);
@@ -1172,6 +1184,11 @@ bool AP_Periph_FW::canard_respond(CanardInstance* canard_instance,
     const auto res = canardRequestOrRespondObj(canard_instance,
                                                transfer->source_node_id,
                                                &transfer_object);
+#if CORVON_POOL_DIAG_ENABLED
+    if (res == -CANARD_ERROR_OUT_OF_MEMORY) {
+        corvon_tx_oom++;
+    }
+#endif
 #if DEBUG_PKTS
     if (res < 0) {
         can_printf("Tx error %d\n", res);
@@ -1186,6 +1203,29 @@ bool AP_Periph_FW::canard_respond(CanardInstance* canard_instance,
 #endif
     return res > 0;
 }
+
+#if CORVON_POOL_DIAG_ENABLED
+void AP_Periph_FW::corvon_pool_diag(CorvonPoolDiag &d)
+{
+    const CanardPoolAllocatorStatistics st = canardGetPoolAllocatorStatistics(&dronecan.canard);
+    d.cap_blocks  = st.capacity_blocks;
+    d.cur_blocks  = st.current_usage_blocks;
+    d.peak_blocks = st.peak_usage_blocks;
+    d.tx_oom = corvon_tx_oom;
+    d.tx_fail_count = dronecan.tx_fail_count;
+#if HAL_ENABLE_SENDING_STATS
+    d.tx_frames    = protocol_stats.tx_frames;
+    d.tx_errors    = protocol_stats.tx_errors;
+    d.rx_frames    = protocol_stats.rx_frames;
+    d.rx_error_oom = protocol_stats.rx_error_oom;
+#else
+    d.tx_frames = 0;
+    d.tx_errors = 0;
+    d.rx_frames = 0;
+    d.rx_error_oom = 0;
+#endif
+}
+#endif // CORVON_POOL_DIAG_ENABLED
 
 void AP_Periph_FW::processTx(void)
 {
