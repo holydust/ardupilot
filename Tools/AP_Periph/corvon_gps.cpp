@@ -189,13 +189,23 @@ void CorvonGPS::run_command(char *line)
         cmd_pool();
 #endif
     } else if (strcmp(verb, "reboot") == 0) {
-        // needed after changing CAN_NODE / CAN_BAUDRATE. The bootloader
-        // magic string reboots *into* the bootloader, this comes back
-        // up in the application
-        hal.serial(0)->printf("ok rebooting\n");
+        // Plain "reboot" is what you want after changing CAN_NODE /
+        // CAN_BAUDRATE. "reboot -b" comes back up in the bootloader.
+        //
+        // The -b spelling is not decoration: it is the string uploader.py
+        // sends to ask a running board to make itself available for an
+        // upload. AP_Periph already matches that sequence in
+        // check_for_serial_reboot_cmd() and answers it with reboot(true) -
+        // but this console reads the same UART and consumes the bytes first,
+        // so the matcher never sees a contiguous match. Without this the
+        // request quietly became a reboot into the application, the upload
+        // could only catch the bootloader's 1s window by luck, and the
+        // documented workaround was to power cycle the board by hand.
+        const bool hold_in_bl = arg1 != nullptr && strcmp(arg1, "-b") == 0;
+        hal.serial(0)->printf("ok rebooting%s\n", hold_in_bl ? " to bootloader" : "");
         hal.scheduler->delay(50);   // let the reply drain
         periph.prepare_reboot();
-        hal.scheduler->reboot(false);
+        hal.scheduler->reboot(hold_in_bl);
     } else {
         hal.serial(0)->printf("err unknown command\n");
     }
