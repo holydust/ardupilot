@@ -13,6 +13,16 @@
  */
 #pragma once
 
+// engineering tool: the "pool" console command (canard pool occupancy and
+// transmit failure counters). Unlike the BOR flag below, AP_Periph.h and
+// can.cpp test this one too, on every board - so the default must sit
+// before the HAL_CORVON_GPS_ENABLED guard, where a non-Corvon AP_Periph
+// build still passes through. Inside the guard it is skipped there and
+// -Werror=undef fails the build.
+#ifndef CORVON_POOL_DIAG_ENABLED
+#define CORVON_POOL_DIAG_ENABLED 0
+#endif
+
 #ifdef HAL_CORVON_GPS_ENABLED
 
 #include <stdint.h>
@@ -21,14 +31,6 @@
 // firmware - see the comment on cmd_bor() in corvon_gps.cpp for why
 #ifndef CORVON_BOR_TOOL_ENABLED
 #define CORVON_BOR_TOOL_ENABLED 0
-#endif
-
-// engineering tool: the "pool" console command (canard pool occupancy and
-// transmit failure counters). The default must live here, not AP_Periph.h:
-// this header is included before that one gets a chance to define it, and
-// -Werror=undef turns the bare #if into a build failure
-#ifndef CORVON_POOL_DIAG_ENABLED
-#define CORVON_POOL_DIAG_ENABLED 0
 #endif
 
 class CorvonGPS {

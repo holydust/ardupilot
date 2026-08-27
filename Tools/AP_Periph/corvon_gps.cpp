@@ -216,7 +216,9 @@ void CorvonGPS::run_command(char *line)
   whenever a command's syntax or output changes so the tool can adapt
  */
 // 2: selftest "result:" gained INCOMPLETE alongside PASS and FAIL
-#define CORVON_PROTO_VERSION 2
+// 3: "reboot -b" reboots into the bootloader (older firmware ignored the
+//    argument and rebooted into the application), reply text changed
+#define CORVON_PROTO_VERSION 3
 
 // raw field vector, for confirming COMPASS_ORIENT at bring-up. The
 // self-test only reports the magnitude, which is identical whichever way
