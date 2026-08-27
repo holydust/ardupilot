@@ -78,6 +78,15 @@ PB5 CAN2_RX CAN2
 # use DNA
 define HAL_CAN_DEFAULT_NODE_ID 0
 
+# The 4000-byte default that an F4 GPS/mag periph would otherwise inherit is
+# not enough. Measured on hardware 2026-08-27, both boards, same bus: peak pool
+# occupancy reached 23% and 46% on a quiet bus, but 91% and 100% on boots where
+# the flight controller had just restarted - and at 100% libcanard refuses a
+# whole transfer rather than emit a corrupt partial one, so 27 broadcasts were
+# dropped with nothing in the log but a warning that never clears afterwards.
+# Every other GNSS peripheral in the tree already raises this to 6000-12000.
+define HAL_CAN_POOL_SIZE 12000
+
 # I2C1 to the onboard compass bus (via RS2058 NO throw).
 # Bus has 4.7k pullups to 3V3 on the compass side.
 I2C_ORDER I2C1
