@@ -23,6 +23,14 @@
 #define CORVON_BOR_TOOL_ENABLED 0
 #endif
 
+// engineering tool: the "pool" console command (canard pool occupancy and
+// transmit failure counters). The default must live here, not AP_Periph.h:
+// this header is included before that one gets a chance to define it, and
+// -Werror=undef turns the bare #if into a build failure
+#ifndef CORVON_POOL_DIAG_ENABLED
+#define CORVON_POOL_DIAG_ENABLED 0
+#endif
+
 class CorvonGPS {
 public:
     enum class Mode : uint8_t {

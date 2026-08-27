@@ -148,14 +148,6 @@ struct CanardRxTransfer;
     (((uint32_t)(data_type_id)) | (((uint32_t)(transfer_type)) << 16U) |                            \
     (((uint32_t)(src_node_id)) << 18U) | (((uint32_t)(dst_node_id)) << 25U))
 
-// Engineering tool: a console command that reports canard pool occupancy and
-// the transmit failure counters. Off in shipped firmware - see cmd_pool() in
-// corvon_gps.cpp. Both numbers live in can.cpp and are otherwise unreachable
-// from the console.
-#ifndef CORVON_POOL_DIAG_ENABLED
-#define CORVON_POOL_DIAG_ENABLED 0
-#endif
-
 #ifndef HAL_CAN_POOL_SIZE
 #if HAL_CANFD_SUPPORTED
     #define HAL_CAN_POOL_SIZE 16000
