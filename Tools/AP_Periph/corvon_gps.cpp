@@ -3,6 +3,9 @@
 #ifdef HAL_CORVON_GPS_ENABLED
 
 #include <AP_Param/AP_Param.h>
+#if CORVON_POOL_DIAG_ENABLED
+#include <AP_HAL_ChibiOS/hwdef/common/watchdog.h>
+#endif
 #include <AP_Common/AP_FWVersion.h>
 #include <string.h>
 #include <stdlib.h>
@@ -467,6 +470,14 @@ void CorvonGPS::cmd_version(void)
                     unsigned((CORVON_FLASH_OPTCR >> 2) & 3),
                     unsigned((CORVON_FLASH_OPTCR >> 8) & 0xFF));
     }
+#if CORVON_POOL_DIAG_ENABLED
+    // engineering only: why did the last boot happen. Reading it settles
+    // whether the post-storm self-reset is the IWDG or something stranger.
+    // A console "reboot" and an uploader flash both count as software.
+    uart.printf("reset: %s\n", stm32_was_watchdog_reset() ? "watchdog" :
+                (stm32_was_software_reset() ? "software" : "power-on/pin"));
+#endif
+
     uart.printf("ok\n");
 }
 
